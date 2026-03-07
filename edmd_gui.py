@@ -21,7 +21,7 @@ from pathlib import Path
 try:
     import gi
     gi.require_version("Gtk", "4.0")
-    from gi.repository import Gtk, GLib, Gdk
+    from gi.repository import Gtk, GLib, Gdk, Pango
 except ImportError:
     raise ImportError(
         "PyGObject not found. Install with: pacman -S python-gobject gtk4\n"
@@ -444,9 +444,6 @@ class EdmdWindow(Gtk.ApplicationWindow):
         row_sh.append(self._slf_health)
         body.append(row_sh)
 
-        row, self._slf_orders = make_row("Orders")
-        body.append(row)
-
         # Hidden unless SLF module is fitted
         section.set_visible(False)
 
@@ -468,8 +465,21 @@ class EdmdWindow(Gtk.ApplicationWindow):
         row_p.append(self._miss_progress)
         body.append(row_p)
 
-        row, self._miss_kills_remaining = make_row("Kills Remaining")
-        body.append(row)
+        # Kill tracking header
+        kill_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        kill_header.add_css_class("data-row")
+        lbl_tf = make_label("Target Faction", css_class="data-key")
+        lbl_tf.set_hexpand(True)
+        lbl_tf.set_xalign(0.0)
+        kill_header.append(lbl_tf)
+        lbl_kn = make_label("Kills Needed", css_class="data-key")
+        lbl_kn.set_hexpand(False)
+        lbl_kn.set_xalign(1.0)
+        kill_header.append(lbl_kn)
+        body.append(kill_header)
+        # Dynamic rows — one per target faction, rebuilt on each update
+        self._kill_rows_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        body.append(self._kill_rows_box)
 
     def _build_stats_panel(self, parent):
         section, body = make_section("Session Stats")
@@ -704,8 +714,7 @@ class EdmdWindow(Gtk.ApplicationWindow):
             self._slf_health.set_label("—  |  Destroyed")
             self._slf_health.add_css_class("health-crit")
 
-        # Orders — suppressed while docked
-        self._slf_orders.set_label("" if s.slf_docked else (s.slf_orders or "—"))
+
 
     def _refresh_missions(self):
         s = self.state
@@ -731,14 +740,28 @@ class EdmdWindow(Gtk.ApplicationWindow):
                 self._miss_progress_key.remove_css_class("status-ready")
                 self._miss_progress_key.add_css_class("status-active")
 
-            # Kills remaining
-            if s.kills_required is not None:
-                total_kc = sum(s.mission_killcount_map.values()) if s.mission_killcount_map else 0
-                self._miss_kills_remaining.set_label(f"{s.kills_required} / {total_kc}")
-            else:
-                self._miss_kills_remaining.set_label("—")
+            # Kill tracking rows — one per target faction, alpha sorted
+            while self._kill_rows_box.get_first_child():
+                self._kill_rows_box.remove(self._kill_rows_box.get_first_child())
+            if s.target_kill_totals:
+                for target in sorted(s.target_kill_totals):
+                    total   = s.target_kill_totals[target]
+                    credited = s.target_kills_credited.get(target, 0)
+                    remaining = max(0, total - credited)
+                    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                    row.add_css_class("data-row")
+                    lbl_name = make_label(target, css_class="data-value")
+                    lbl_name.set_hexpand(True)
+                    lbl_name.set_xalign(0.0)
+                    lbl_name.set_ellipsize(Pango.EllipsizeMode.END)
+                    row.append(lbl_name)
+                    lbl_val = make_label(f"{remaining} / {total}", css_class="data-value")
+                    lbl_val.set_hexpand(False)
+                    lbl_val.set_xalign(1.0)
+                    row.append(lbl_val)
+                    self._kill_rows_box.append(row)
         else:
-            for w in [self._miss_value, self._miss_progress, self._miss_kills_remaining]:
+            for w in [self._miss_value, self._miss_progress]:
                 w.set_label("—")
             self._miss_progress_key.set_label("In Progress")
             for w in [self._miss_progress, self._miss_progress_key]:

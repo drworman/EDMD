@@ -527,12 +527,16 @@ class MonitorState:
         self.mission_value_map = {}
         self.stack_value = 0
         self.has_fighter_bay = False      # True when current ship's Loadout includes a fighter bay
-        self.mission_killcount_map = {}     # MissionID -> required kill count (from MissionAccepted)
+        self.mission_killcount_map = {}      # MissionID -> required kill count (from MissionAccepted)
         self.mission_target_faction_map = {}  # MissionID -> TargetFaction (who to kill)
-        self.mission_issuing_faction_map = {} # MissionID -> Faction (who gave the mission)
-        self.faction_kills_remaining = {}    # IssuingFaction -> kills still needed (sum of active missions)
-        self.kills_required = None        # Total kills required across all active missions; None = unknown
-        self.kills_credited = 0           # Kills logged toward missions this session
+        self.mission_issuing_faction_map = {} # MissionID -> IssuingFaction (who gave the mission)
+        # Per-target-faction kill tracking.
+        # target_kill_totals[T] = max( sum(KillCounts) per issuing faction ) for target T
+        #   Recalculated on MissionAccepted / MissionCompleted / Abandoned / Failed.
+        #   NOT changed on MissionRedirected (mission still live until reward collected).
+        # target_kills_credited[T] = kills against T observed live (post-preload).
+        self.target_kill_totals   = {}  # TargetFaction -> int (bottleneck total)
+        self.target_kills_credited = {} # TargetFaction -> int (live kills since tracking started)
 
         # SLF state
         self.slf_deployed = False
@@ -1054,28 +1058,11 @@ def handle_event(line):
                 lifetime.kills += 1
                 if not state.in_preload:
                     victim_faction = j.get("VictimFaction", "")
-                    if (state.faction_kills_remaining
-                            and victim_faction
-                            and state.mission_target_faction_map):
-                        # Determine which issuing factions have active missions targeting
-                        # this victim faction.  Each such faction gets -1 on this kill,
-                        # regardless of how many missions they gave.
-                        credited_factions = set(
-                            state.mission_issuing_faction_map[mid]
-                            for mid, tf in state.mission_target_faction_map.items()
-                            if tf == victim_faction
-                            and mid in state.mission_issuing_faction_map
+                    if victim_faction and victim_faction in state.target_kill_totals:
+                        # Credit one kill against this specific target faction
+                        state.target_kills_credited[victim_faction] = (
+                            state.target_kills_credited.get(victim_faction, 0) + 1
                         )
-                        for f in credited_factions:
-                            if f in state.faction_kills_remaining:
-                                state.faction_kills_remaining[f] = max(
-                                    0, state.faction_kills_remaining[f] - 1
-                                )
-                        if state.faction_kills_remaining:
-                            state.kills_required = max(
-                                state.faction_kills_remaining.values()
-                            )
-                    state.kills_credited += 1
 
                 thiskill = logtime
                 killtime = ""
@@ -1190,17 +1177,8 @@ def handle_event(line):
             # -----------------------------
             case "MissionRedirected" if "Mission_Massacre" in j["Name"]:
                 state.missions_complete += 1
-                # This mission's kills are complete — remove its contribution from
-                # its issuing faction's remaining count.
-                redirected_mid = j["MissionID"]
-                issuer = state.mission_issuing_faction_map.get(redirected_mid)
-                if issuer and issuer in state.faction_kills_remaining:
-                    mission_kc = state.mission_killcount_map.get(redirected_mid, 0)
-                    state.faction_kills_remaining[issuer] = max(
-                        0, state.faction_kills_remaining[issuer] - mission_kc
-                    )
-                    if state.faction_kills_remaining:
-                        state.kills_required = max(state.faction_kills_remaining.values())
+                # MissionRedirected = kills quota met, but mission still live until
+                # reward is collected.  Do NOT change totals or credited counts.
                 total = len(state.active_missions)
                 done = state.missions_complete
 
@@ -1690,13 +1668,7 @@ def handle_event(line):
                 if "Faction" in j:
                     state.mission_issuing_faction_map[j["MissionID"]] = j["Faction"]
                 # Rebuild faction_kills_remaining and kills_required from current maps
-                if "KillCount" in j and "Faction" in j:
-                    issuer = j["Faction"]
-                    state.faction_kills_remaining[issuer] = (
-                        state.faction_kills_remaining.get(issuer, 0) + j["KillCount"]
-                    )
-                if state.faction_kills_remaining:
-                    state.kills_required = max(state.faction_kills_remaining.values())
+                recalc_target_kill_totals()
 
                 emit(
                     msg_term=(
@@ -1717,19 +1689,7 @@ def handle_event(line):
                 state.mission_killcount_map.pop(j["MissionID"], None)
                 state.mission_target_faction_map.pop(j["MissionID"], None)
                 state.mission_issuing_faction_map.pop(j["MissionID"], None)
-                # Rebuild faction_kills_remaining from whatever missions are still active.
-                # This covers all gone-event types cleanly.
-                from collections import defaultdict as _dd
-                _frk = _dd(int)
-                for _mid, _kc in state.mission_killcount_map.items():
-                    _issuer = state.mission_issuing_faction_map.get(_mid)
-                    if _issuer:
-                        _frk[_issuer] += _kc
-                state.faction_kills_remaining = dict(_frk)
-                if state.faction_kills_remaining:
-                    state.kills_required = max(state.faction_kills_remaining.values())
-                else:
-                    state.kills_required = None
+                recalc_target_kill_totals()
 
                 state.active_missions.remove(j["MissionID"])
 
@@ -2296,18 +2256,46 @@ def bootstrap_missions():
 
 
 
+def recalc_target_kill_totals():
+    """Rebuild state.target_kill_totals from current mission maps.
+
+    For each target faction T, find every issuing faction I that has active
+    missions targeting T, sum their KillCounts, then take the max — that is
+    the bottleneck (the hardest issuer gates completion for T).
+
+    Call this after any MissionAccepted, MissionCompleted, MissionAbandoned,
+    or MissionFailed event.  Do NOT call on MissionRedirected — the mission
+    remains live until the reward is collected.
+    """
+    from collections import defaultdict
+    # issuer_sums[target][issuer] = sum of killcounts
+    issuer_sums = defaultdict(lambda: defaultdict(int))
+    for mid, kc in state.mission_killcount_map.items():
+        target  = state.mission_target_faction_map.get(mid)
+        issuer  = state.mission_issuing_faction_map.get(mid)
+        if target and issuer:
+            issuer_sums[target][issuer] += kc
+
+    new_totals = {}
+    for target, issuers in issuer_sums.items():
+        new_totals[target] = max(issuers.values())
+
+    state.target_kill_totals = new_totals
+    # Prune credited counts for targets that no longer have active missions
+    for t in list(state.target_kills_credited):
+        if t not in new_totals:
+            del state.target_kills_credited[t]
+
+
 def bootstrap_kill_counts():
     """Scan journals for MissionAccepted events to populate mission_killcount_map
-    and compute kills_required for all currently active missions.
+    and compute target_kill_totals for all currently active missions.
 
     Called after Missions bulk event and after bootstrap_missions(), so
-    state.active_missions is already populated and missions_complete reflects
-    how many missions have been redirected (kills complete).
+    state.active_missions is already populated.
 
-    Note: kills_required is NOT offset by kills logged during preload — those
-    kills already happened before EDMD started and are reflected in the game's
-    server-side kill tracking. We only decrement kills_required for live kills
-    logged after preload completes."""
+    target_kill_totals[T] = max issuer sum for target T across all active missions.
+    target_kills_credited starts at zero — we only count live kills post-preload."""
     if not state.active_missions:
         return
 
@@ -2339,48 +2327,10 @@ def bootstrap_kill_counts():
         return
 
     state.mission_killcount_map = killcount_map
+    state.target_kills_credited = {}   # reset — fresh tracking session
+    recalc_target_kill_totals()
 
-    # Exclude missions already redirected (kills complete) from the required total.
-    # Rescan journals for MissionRedirected events against the active set.
-    redirected_ids = set()
-    for jpath in sorted(Path(journal_dir).glob("Journal*.log")):
-        try:
-            with open(jpath, mode="r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        je = json.loads(line)
-                    except ValueError:
-                        continue
-                    ev = je.get("event")
-                    mid = je.get("MissionID")
-                    if ev == "MissionRedirected" and mid in active_set:
-                        redirected_ids.add(mid)
-                    elif ev in ("MissionCompleted", "MissionAbandoned", "MissionFailed"):
-                        redirected_ids.discard(mid)
-        except OSError:
-            continue
-
-    # Build faction_kills_remaining: sum killcounts per issuing faction,
-    # excluding missions that have already been redirected (kills complete).
-    # kills_required = max across factions — the bottleneck faction gates completion.
-    from collections import defaultdict as _dd
-    _frk = _dd(int)
-    for mid, kc in killcount_map.items():
-        if mid in redirected_ids:
-            continue
-        issuer = state.mission_issuing_faction_map.get(mid)
-        if issuer:
-            _frk[issuer] += kc
-    state.faction_kills_remaining = dict(_frk)
-
-    if state.faction_kills_remaining:
-        state.kills_required = max(state.faction_kills_remaining.values())
-    else:
-        state.kills_required = 0
-
-    trace(f"Kill count bootstrap: kills_required={state.kills_required} "
-          f"faction_kills_remaining={state.faction_kills_remaining} "
-          f"redirected={len(redirected_ids)}")
+    trace(f"Kill count bootstrap: target_kill_totals={state.target_kill_totals}")
 
 # ----------------------------------------
 # ENTRY POINT
