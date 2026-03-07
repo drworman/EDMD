@@ -795,11 +795,14 @@ def emit(
     msg_term,
     msg_discord=None,
     emoji=None,
+    sigil=None,
     timestamp=None,
     loglevel=2,
     event=None,
 ):
-    emoji = f"{emoji} " if emoji else ""
+    emoji_fmt = f"{emoji} " if emoji else ""
+    # Terminal uses ASCII sigil when provided, falls back to emoji
+    term_prefix = f"{sigil}  " if sigil else emoji_fmt
     loglevel = int(loglevel)
 
     if state.in_preload and not notify_test:
@@ -817,13 +820,13 @@ def emit(
 
     # Terminal — suppressed entirely when GUI is active
     if loglevel > 0 and not notify_test and not gui_mode:
-        print(f"[{logtime}]{emoji}{msg_term}")
+        print(f"[{logtime}] {term_prefix}{msg_term}")
 
     # GUI event log - strip ANSI codes, push to queue
     if gui_mode and loglevel > 0:
-        ansi_esc = re.compile(r"\[[0-9;]*m")
+        ansi_esc = re.compile(r"\x1b\[[0-9;]*m")
         clean = ansi_esc.sub("", msg_term)
-        gui_queue.put(("log", f"[{logtime}] {emoji}{clean}"))
+        gui_queue.put(("log", f"[{logtime}] {emoji_fmt}{clean}"))
 
     # Discord — send deferred update notice on first emit after startup
     global _discord_update_pending
@@ -866,7 +869,7 @@ def emit(
         )
 
         if state.dup_count <= MAX_DUPLICATES:
-            post_to_discord(f"{pilot_name}{emoji}{discord_message}{logtime_fmt}{ping}")
+            post_to_discord(f"{pilot_name}{emoji_fmt}{discord_message}{logtime_fmt}{ping}")
         elif not state.dup_suppressed:
             post_to_discord(
                 f"{pilot_name}⏸️ **Suppressing further duplicate messages**{logtime_fmt}"
@@ -943,7 +946,7 @@ def handle_event(line):
                         emit(
                             msg_term=f"Cargo scan{inbound_scan_count}{pirate}",
                             msg_discord=f"**Cargo scan{inbound_scan_count}**{pirate}",
-                            emoji="📦",
+                            emoji="📦",  sigil="-  SCAN",
                             timestamp=logtime,
                             loglevel=notify_levels["InboundScan"],
                         )
@@ -967,7 +970,7 @@ def handle_event(line):
                             f'**Pirate didn"t engage due to insufficient cargo value**'
                             f"{low_cargo_count}"
                         ),
-                        emoji="🎣",
+                        emoji="📦",  sigil="-  SCAN",
                         timestamp=logtime,
                         loglevel=notify_levels["LowCargoValue"],
                         event="LowCargoValue",
@@ -977,7 +980,7 @@ def handle_event(line):
                     emit(
                         msg_term=f"{Terminal.BAD}Under attack by security services!{Terminal.END}",
                         msg_discord="**Under attack by security services!**",
-                        emoji="🚨",
+                        emoji="🚨",  sigil="!! ATCK",
                         timestamp=logtime,
                         loglevel=notify_levels["PoliceAttack"],
                     )
@@ -1003,7 +1006,7 @@ def handle_event(line):
                     emit(
                         msg_term=f"{Terminal.WARN}Scanned security{Terminal.END} ({ship})",
                         msg_discord=f"**Scanned security** ({ship})",
-                        emoji="🚨",
+                        emoji="🔍",  sigil="-  SCAN",
                         timestamp=logtime,
                         loglevel=notify_levels["PoliceScan"],
                     )
@@ -1043,7 +1046,7 @@ def handle_event(line):
                         emit(
                             msg_term=f"{col}Scan{Terminal.END}: {ship}{rank}{pirate}",
                             msg_discord=f"**{ship}**{rank}{pirate}",
-                            emoji="🔎",
+                            emoji="🔍",  sigil="-  SCAN",
                             timestamp=logtime,
                             loglevel=log,
                         )
@@ -1168,7 +1171,7 @@ def handle_event(line):
                         f"{kills_d}**{ship}{killtime}**"
                         f"{piratename}{bountyvalue_fmt}{bountyfaction}"
                     ),
-                    emoji="💥",
+                    emoji="💥",  sigil="*  KILL",
                     timestamp=logtime,
                     loglevel=log,
                 )
@@ -1194,7 +1197,7 @@ def handle_event(line):
 
                 emit(
                     msg_term=msg_term,
-                    emoji="✅",
+                    emoji="✅",  sigil="*  MISS",
                     timestamp=logtime,
                     loglevel=log,
                 )
@@ -1244,7 +1247,7 @@ def handle_event(line):
                 emit(
                     msg_term=f"{col}Fuel: {fuelremaining}% remaining{Terminal.END}{fuel_time_remain}",
                     msg_discord=f"**Fuel{level} {fuelremaining}% remaining**{fuel_time_remain}",
-                    emoji="⛽",
+                    emoji="⛽",  sigil="+  FUEL",
                     timestamp=logtime,
                     loglevel=fuel_loglevel,
                 )
@@ -1271,7 +1274,7 @@ def handle_event(line):
                 emit(
                     msg_term=f"{Terminal.BAD}Fighter destroyed!{Terminal.END}",
                     msg_discord="**Fighter destroyed!**",
-                    emoji="🕹️",
+                    emoji="💀",  sigil="!! SLF ",
                     timestamp=logtime,
                     loglevel=notify_levels["FighterLost"],
                 )
@@ -1290,7 +1293,7 @@ def handle_event(line):
 
                 emit(
                     msg_term="Fighter launched",
-                    emoji="🕹️",
+                    emoji="🛩️",  sigil="-  SLF ",
                     timestamp=logtime,
                     loglevel=2,
                 )
@@ -1348,7 +1351,7 @@ def handle_event(line):
                 emit(
                     msg_term=f"{col}Ship shields {shields}{Terminal.END}",
                     msg_discord=f"**Ship shields {shields}**",
-                    emoji="🛡️",
+                    emoji="🛡️",  sigil="^  SHLD",
                     timestamp=logtime,
                     loglevel=notify_levels["ShieldEvent"],
                 )
@@ -1374,7 +1377,7 @@ def handle_event(line):
                         msg_discord=(
                             f"**Fighter hull damaged!** (Integrity: {hullhealth}%)"
                         ),
-                        emoji="🕹️",
+                        emoji="🛩️",  sigil="^  SLF ",
                         timestamp=logtime,
                         loglevel=notify_levels["FighterDamage"],
                     )
@@ -1391,7 +1394,7 @@ def handle_event(line):
                         msg_discord=(
                             f"**Ship hull damaged!** (Integrity: {hullhealth}%)"
                         ),
-                        emoji="🛠️",
+                        emoji="⚠️",  sigil="^  HULL",
                         timestamp=logtime,
                         loglevel=notify_levels["HullEvent"],
                     )
@@ -1401,7 +1404,7 @@ def handle_event(line):
                 emit(
                     msg_term=f"{Terminal.BAD}Ship destroyed!{Terminal.END}",
                     msg_discord="**Ship destroyed!**",
-                    emoji="💀",
+                    emoji="💀",  sigil="!! DEAD",
                     timestamp=logtime,
                     loglevel=notify_levels["Died"],
                 )
@@ -1414,7 +1417,7 @@ def handle_event(line):
 
                 emit(
                     msg_term="Exited to main menu",
-                    emoji="🚪",
+                    emoji="🚪",  sigil="-  INFO",
                     timestamp=logtime,
                     loglevel=2,
                 )
@@ -1454,7 +1457,7 @@ def handle_event(line):
                 emit(
                     msg_term=f"CMDR {state.pilot_name} ({cmdrinfo})",
                     msg_discord=f"**CMDR {state.pilot_name}** ({cmdrinfo})",
-                    emoji="🔄",
+                    emoji="👤",  sigil="-  INFO",
                     timestamp=logtime,
                     loglevel=2,
                 )
@@ -1565,12 +1568,15 @@ def handle_event(line):
 
                 if "Resource Extraction Site" in type_local:
                     emoji = "🪐"
+                    sigil = ">  DROP"
                 else:
                     emoji = "⚔️"
+                    sigil = ">  DROP"
 
                 emit(
                     msg_term=f"Dropped at {type_local}",
                     emoji=emoji,
+                    sigil=sigil,
                     timestamp=logtime,
                     loglevel=2,
                 )
@@ -1583,7 +1589,7 @@ def handle_event(line):
                 emit(
                     msg_term=f"{Terminal.BAD}Cargo stolen!{Terminal.END} ({name})",
                     msg_discord=f"**Cargo stolen!** ({name})",
-                    emoji="🪓",
+                    emoji="📦",  sigil="^  SHLD",
                     timestamp=logtime,
                     loglevel=notify_levels["CargoLost"],
                     event="CargoLost",
@@ -1655,7 +1661,7 @@ def handle_event(line):
                         f"Missions loaded "
                         f"(active massacres: {len(state.active_missions)})"
                     ),
-                    emoji="🎯",
+                    emoji="📋",  sigil="*  MISS",
                     timestamp=logtime,
                     loglevel=notify_levels["MissionUpdate"],
                 )
@@ -1681,7 +1687,7 @@ def handle_event(line):
                         f"Accepted massacre mission "
                         f"(active: {total_now})"
                     ),
-                    emoji="🎯",
+                    emoji="📋",  sigil="*  MISS",
                     timestamp=logtime,
                     loglevel=notify_levels["MissionUpdate"],
                 )
@@ -1703,7 +1709,7 @@ def handle_event(line):
                         emit(
                             msg_term=_stack_line,
                             msg_discord=f"**{_stack_line}**",
-                            emoji="🎯",
+                            emoji="🏆",  sigil="*  MISS",
                             timestamp=logtime,
                             loglevel=notify_levels["MissionUpdate"],
                         )
@@ -1731,7 +1737,7 @@ def handle_event(line):
                         f"Massacre mission {event_name} "
                         f"(active: {len(state.active_missions)})"
                     ),
-                    emoji="🎯",
+                    emoji="📋",  sigil="*  MISS",
                     timestamp=logtime,
                     loglevel=notify_levels["MissionUpdate"],
                 )
@@ -1786,7 +1792,7 @@ def handle_event(line):
 
                     emit(
                         msg_term=(f"Merits: +{j['MeritsGained']:,} ({j['Power']})"),
-                        emoji="🎫",
+                        emoji="⭐",  sigil="+  MERC",
                         timestamp=logtime,
                         loglevel=notify_levels["MeritEvent"],
                     )
@@ -1830,7 +1836,7 @@ def handle_event(line):
 
                 emit(
                     msg_term=f"Swapped ship to {state.pilot_ship}",
-                    emoji="🚢",
+                    emoji="🚢",  sigil="-  SHIP",
                     timestamp=logtime,
                     loglevel=2,
                 )
@@ -1838,7 +1844,7 @@ def handle_event(line):
             case "Shutdown":
                 emit(
                     msg_term="Quit to desktop",
-                    emoji="🛑",
+                    emoji="🛑",  sigil="-  INFO",
                     timestamp=logtime,
                     loglevel=2,
                 )
@@ -1850,11 +1856,13 @@ def handle_event(line):
                 if j["event"] == "SupercruiseEntry":
                     event_name = "Supercruise entry in"
                     emoji = "🚀"
+                    sigil = ">  JUMP"
                     state.pilot_system = j.get("StarSystem", state.pilot_system)
                     state.pilot_body = None   # in supercruise — no specific body
                 else:
                     event_name = "FSD jump to"
-                    emoji = "☀️"
+                    emoji = "🌌"
+                    sigil = ">  JUMP"
                     state.pilot_system = j.get("StarSystem", state.pilot_system)
                     state.pilot_body = None   # body resolved on drop/dock
 
@@ -1864,6 +1872,7 @@ def handle_event(line):
                 emit(
                     msg_term=f"{event_name} {j['StarSystem']}",
                     emoji=emoji,
+                    sigil=sigil,
                     timestamp=logtime,
                     loglevel=2,
                 )
@@ -1990,7 +1999,7 @@ def emit_summary(stats, logtime=None):
     emit(
         msg_term=summary_text,
         msg_discord=f"```{summary_text}```",
-        emoji="📊",
+        emoji="📊",  sigil="~  SUMM",
         timestamp=logtime,
         loglevel=2,
     )
@@ -2669,7 +2678,7 @@ def monitor_journal(jfile):
                         emit(
                             msg_term=f"No kills in {idle_dur} — session may be inactive",
                             msg_discord=f"⚠️ **No kills in {idle_dur}** — session may be inactive",
-                            emoji="⚠️",
+                            emoji="⚠️",  sigil="!  WARN",
                             timestamp=state.event_time,
                             loglevel=notify_levels.get("InactiveAlert", 3),
                         )
@@ -2703,7 +2712,7 @@ def monitor_journal(jfile):
                                 f"📉 **Kill rate low: {rate_fmt}/hr** "
                                 f"(threshold: {warn_rate}/hr)"
                             ),
-                            emoji="📉",
+                            emoji="📉",  sigil="!  WARN",
                             timestamp=state.event_time,
                             loglevel=notify_levels.get("RateAlert", 3),
                         )
