@@ -133,7 +133,7 @@ headerbar.edmd-header .header-title {
 
 .right-panel {
     min-width: 300px;
-    padding: 10px 8px;
+    padding: 6px 8px;
     background-color: #1c2128;
 }
 
@@ -144,8 +144,8 @@ headerbar.edmd-header .header-title {
 /* ── Sections ────────────────────────────────────────────────────────────── */
 
 .panel-section {
-    margin-bottom: 6px;
-    padding: 6px 8px 8px 8px;
+    margin-bottom: 4px;
+    padding: 4px 8px 6px 8px;
     border-radius: 6px;
     background-color: #161a1f;
     border: 1px solid #2a3040;
@@ -157,11 +157,11 @@ headerbar.edmd-header .header-title {
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: #e07b20;
-    padding-bottom: 4px;
+    padding-bottom: 2px;
 }
 
 .section-sep {
-    margin-bottom: 4px;
+    margin-bottom: 2px;
     color: #2a3040;
 }
 
@@ -172,7 +172,7 @@ headerbar.edmd-header .header-title {
 /* ── Data rows ───────────────────────────────────────────────────────────── */
 
 .data-row {
-    padding: 2px 0;
+    padding: 1px 0;
 }
 
 .data-key {
