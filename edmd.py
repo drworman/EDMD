@@ -1048,9 +1048,10 @@ def handle_event(line):
 
                 active_session.kills += 1
                 lifetime.kills += 1
-                if state.kills_required is not None and state.kills_required > 0:
-                    state.kills_required -= 1
-                state.kills_credited += 1
+                if not state.in_preload:
+                    if state.kills_required is not None and state.kills_required > 0:
+                        state.kills_required -= 1
+                    state.kills_credited += 1
 
                 thiskill = logtime
                 killtime = ""
@@ -2241,11 +2242,13 @@ def bootstrap_kill_counts():
     and compute kills_required for all currently active missions.
 
     Called after Missions bulk event and after bootstrap_missions(), so
-    state.active_missions is already populated.
+    state.active_missions is already populated and missions_complete reflects
+    how many missions have been redirected (kills complete).
 
-    Also accounts for kills already credited this session (kills_credited)
-    and missions already redirected (missions_complete) so the remaining
-    count is accurate on relog."""
+    Note: kills_required is NOT offset by kills logged during preload — those
+    kills already happened before EDMD started and are reflected in the game's
+    server-side kill tracking. We only decrement kills_required for live kills
+    logged after preload completes."""
     if not state.active_missions:
         return
 
@@ -2274,12 +2277,9 @@ def bootstrap_kill_counts():
 
     state.mission_killcount_map = killcount_map
 
-    # kills_required = sum of all required kills, minus kills already credited
-    # this session, minus kills for missions already redirected (complete).
-    # Redirected missions have zero remaining; exclude their full count.
+    # Exclude missions already redirected (kills complete) from the required total.
+    # Rescan journals for MissionRedirected events against the active set.
     redirected_ids = set()
-    # Re-scan briefly for redirected missions (already done elsewhere, but we
-    # need the set here to subtract their counts from the total).
     for jpath in sorted(Path(journal_dir).glob("Journal*.log")):
         try:
             with open(jpath, mode="r", encoding="utf-8") as f:
@@ -2301,10 +2301,9 @@ def bootstrap_kill_counts():
         kc for mid, kc in killcount_map.items()
         if mid not in redirected_ids
     )
-    state.kills_required = max(0, total_required - state.kills_credited)
-    trace(f"Kill count bootstrap: required={state.kills_required} "
-          f"(total={total_required}, credited={state.kills_credited}, "
-          f"redirected={len(redirected_ids)})")
+    state.kills_required = total_required
+    trace(f"Kill count bootstrap: kills_required={state.kills_required} "
+          f"(total={total_required}, redirected={len(redirected_ids)})")
 
 # ----------------------------------------
 # ENTRY POINT
