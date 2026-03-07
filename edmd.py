@@ -1932,12 +1932,28 @@ def find_latest_journal():
 
 
 def bootstrap_slf():
-    """Scan journals for the most recent RestockVehicle event to recover slf_type
-    when no RestockVehicle has fired in the current session."""
-    if state.slf_type is not None:
-        return  # already known
+    """Scan journal history to recover SLF state when it cannot be determined
+    from the current session alone.
 
-    journals = sorted(Path(journal_dir).glob("Journal*.log"), reverse=True)  # newest first
+    Recovers:
+    - slf_type: from the most recent RestockVehicle event
+    - slf_deployed / slf_docked: from the most recent fighter state event
+      (LaunchFighter, DockFighter, FighterDestroyed, FighterRebuilt)
+
+    This handles two cases:
+    1. Relog with SLF deployed: new journal has no LaunchFighter yet; the
+       game emits DockFighter+LaunchFighter ~1 min later but preload ends first.
+    2. EDMD started mid-session: current journal may lack early fighter events.
+
+    Scans newest-first and stops once both type and state are recovered."""
+
+    journals = sorted(Path(journal_dir).glob("Journal*.log"), reverse=True)
+
+    STATE_EVENTS = {"LaunchFighter", "DockFighter", "FighterDestroyed", "FighterRebuilt"}
+
+    slf_state_known = False
+    slf_type_known = state.slf_type is not None
+
     for jpath in journals:
         try:
             lines = jpath.read_text(encoding="utf-8").splitlines()
@@ -1946,7 +1962,31 @@ def bootstrap_slf():
                     je = json.loads(line)
                 except ValueError:
                     continue
-                if je.get("event") == "RestockVehicle":
+                ev = je.get("event")
+
+                if not slf_state_known and ev in STATE_EVENTS:
+                    if ev == "LaunchFighter" and not je.get("PlayerControlled", True):
+                        state.slf_deployed = True
+                        state.slf_docked = False
+                        state.slf_loadout = je.get("Loadout", state.slf_loadout)
+                        trace(f"SLF bootstrap: deployed, recovered from {jpath.name}")
+                    elif ev == "DockFighter":
+                        state.slf_deployed = False
+                        state.slf_docked = True
+                        trace(f"SLF bootstrap: docked, recovered from {jpath.name}")
+                    elif ev == "FighterDestroyed":
+                        state.slf_deployed = False
+                        state.slf_docked = False
+                        state.slf_hull = 0
+                        trace(f"SLF bootstrap: destroyed, recovered from {jpath.name}")
+                    elif ev == "FighterRebuilt":
+                        state.slf_deployed = False
+                        state.slf_docked = True
+                        state.slf_hull = 100
+                        trace(f"SLF bootstrap: rebuilt/docked, recovered from {jpath.name}")
+                    slf_state_known = True
+
+                if not slf_type_known and ev == "RestockVehicle":
                     fighter_type = je.get("Type", "")
                     loadout = je.get("Loadout", "")
                     key = (fighter_type, loadout)
@@ -1957,15 +1997,18 @@ def bootstrap_slf():
                     elif fighter_type:
                         state.slf_type = fighter_type.replace("_", " ").title()
                     trace(f"SLF bootstrap: type={state.slf_type!r} from {jpath.name}")
-                    if gui_mode:
-                        gui_queue.put(("slf_update", None))
-                    return
+                    slf_type_known = True
+
+                if slf_state_known and slf_type_known:
+                    break
+
         except OSError:
             continue
 
-    # SLF type not found in history, but if already deployed the GUI still needs
-    # to render the block — queue an update so slf_deployed drives visibility.
-    if state.slf_deployed and gui_mode:
+        if slf_state_known and slf_type_known:
+            break
+
+    if (slf_state_known or state.slf_deployed) and gui_mode:
         gui_queue.put(("slf_update", None))
 
 
