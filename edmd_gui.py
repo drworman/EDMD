@@ -439,13 +439,13 @@ class EdmdWindow(Gtk.ApplicationWindow):
         row, self._slf_status = make_row("Status")
         body.append(row)
 
-        # Combined Shields | Hull row
+        # Hull row
         row_sh = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         row_sh.add_css_class("data-row")
-        key_sh = make_label("Shields | Hull", css_class="data-key")
+        key_sh = make_label("Hull", css_class="data-key")
         key_sh.set_hexpand(False)
         row_sh.append(key_sh)
-        self._slf_health = make_label("— | —", css_class="data-value")
+        self._slf_health = make_label("—", css_class="data-value")
         self._slf_health.set_hexpand(True)
         self._slf_health.set_xalign(1.0)
         row_sh.append(self._slf_health)
@@ -463,7 +463,7 @@ class EdmdWindow(Gtk.ApplicationWindow):
 
         row_p = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         row_p.add_css_class("data-row")
-        self._miss_progress_key = make_label("In Progress", css_class="data-key")
+        self._miss_progress_key = make_label("Completed", css_class="data-key")
         self._miss_progress_key.set_hexpand(False)
         row_p.append(self._miss_progress_key)
         self._miss_progress = make_label("—", css_class="data-value")
@@ -501,7 +501,7 @@ class EdmdWindow(Gtk.ApplicationWindow):
         # pipe delimiters align across all three rows.
         for key_text, attr in [
             ("Kills",   "_stat_line_kills"),
-            ("Credits", "_stat_line_credits"),
+            ("Bounties", "_stat_line_credits"),
             ("Merits",  "_stat_line_merits"),
         ]:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
@@ -542,9 +542,9 @@ class EdmdWindow(Gtk.ApplicationWindow):
         link_row.add_css_class("sponsor-link-row")
 
         links = [
-            ("☕ Ko-Fi",   "https://ko-fi.com/drworman"),
-            ("🎗️ Patreon", "https://patreon.com/drworman"),
-            ("🐙 GitHub",  "https://github.com/drworman/EDMD"),
+            ("☕ Ko-Fi",  "https://ko-fi.com/drworman"),
+            ("💳 PayPal", "https://paypal.me/DavidWorman"),
+            ("🐙 GitHub", "https://github.com/drworman/EDMD"),
         ]
 
         for i, (label_text, url) in enumerate(links):
@@ -708,17 +708,17 @@ class EdmdWindow(Gtk.ApplicationWindow):
             self._slf_status.set_label("Destroyed")
             self._slf_status.add_css_class("health-crit")
 
-        # Shields | Hull — blank when docked (repaired to full, not informative)
+        # Hull — blank when docked (repaired to full, not informative)
         for cls in ("health-good", "health-warn", "health-crit"):
             self._slf_health.remove_css_class(cls)
         if s.slf_docked:
-            self._slf_health.set_label("—  |  —")
+            self._slf_health.set_label("—")
             self._slf_health.add_css_class("health-good")
         elif s.slf_deployed or s.slf_hull > 0:
-            self._slf_health.set_label(f"—  |  {s.slf_hull}%")
+            self._slf_health.set_label(f"{s.slf_hull}%")
             self._slf_health.add_css_class(_hull_css(s.slf_hull))
         else:
-            self._slf_health.set_label("—  |  Destroyed")
+            self._slf_health.set_label("Destroyed")
             self._slf_health.add_css_class("health-crit")
 
 
@@ -740,7 +740,7 @@ class EdmdWindow(Gtk.ApplicationWindow):
                 self._miss_progress_key.remove_css_class("status-active")
                 self._miss_progress_key.add_css_class("status-ready")
             else:
-                self._miss_progress_key.set_label("In Progress")
+                self._miss_progress_key.set_label("Completed")
                 self._miss_progress.set_label(f"{done}/{total}")
                 self._miss_progress.remove_css_class("status-ready")
                 self._miss_progress.add_css_class("status-active")
@@ -770,7 +770,7 @@ class EdmdWindow(Gtk.ApplicationWindow):
         else:
             for w in [self._miss_value, self._miss_progress]:
                 w.set_label("—")
-            self._miss_progress_key.set_label("In Progress")
+            self._miss_progress_key.set_label("Completed")
             for w in [self._miss_progress, self._miss_progress_key]:
                 w.remove_css_class("status-ready")
                 w.remove_css_class("status-active")
