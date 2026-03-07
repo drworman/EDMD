@@ -1957,9 +1957,16 @@ def bootstrap_slf():
                     elif fighter_type:
                         state.slf_type = fighter_type.replace("_", " ").title()
                     trace(f"SLF bootstrap: type={state.slf_type!r} from {jpath.name}")
+                    if gui_mode:
+                        gui_queue.put(("slf_update", None))
                     return
         except OSError:
             continue
+
+    # SLF type not found in history, but if already deployed the GUI still needs
+    # to render the block — queue an update so slf_deployed drives visibility.
+    if state.slf_deployed and gui_mode:
+        gui_queue.put(("slf_update", None))
 
 
 def bootstrap_crew():
