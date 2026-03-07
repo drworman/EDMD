@@ -468,6 +468,9 @@ class EdmdWindow(Gtk.ApplicationWindow):
         row_p.append(self._miss_progress)
         body.append(row_p)
 
+        row, self._miss_kills_remaining = make_row("Kills Remaining")
+        body.append(row)
+
     def _build_stats_panel(self, parent):
         section, body = make_section("Session Stats")
         parent.append(section)
@@ -727,8 +730,15 @@ class EdmdWindow(Gtk.ApplicationWindow):
                 self._miss_progress.add_css_class("status-active")
                 self._miss_progress_key.remove_css_class("status-ready")
                 self._miss_progress_key.add_css_class("status-active")
+
+            # Kills remaining
+            if s.kills_required is not None:
+                total_kc = sum(s.mission_killcount_map.values()) if s.mission_killcount_map else 0
+                self._miss_kills_remaining.set_label(f"{s.kills_required} / {total_kc}")
+            else:
+                self._miss_kills_remaining.set_label("—")
         else:
-            for w in [self._miss_value, self._miss_progress]:
+            for w in [self._miss_value, self._miss_progress, self._miss_kills_remaining]:
                 w.set_label("—")
             self._miss_progress_key.set_label("In Progress")
             for w in [self._miss_progress, self._miss_progress_key]:

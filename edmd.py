@@ -526,6 +526,9 @@ class MonitorState:
         self.last_rate_check = None
         self.mission_value_map = {}
         self.stack_value = 0
+        self.mission_killcount_map = {}   # MissionID -> required kill count (from MissionAccepted)
+        self.kills_required = None        # Total kills required across all active missions; None = unknown
+        self.kills_credited = 0           # Kills logged toward missions this session
 
         # SLF state
         self.slf_deployed = False
@@ -1045,6 +1048,9 @@ def handle_event(line):
 
                 active_session.kills += 1
                 lifetime.kills += 1
+                if state.kills_required is not None and state.kills_required > 0:
+                    state.kills_required -= 1
+                state.kills_credited += 1
 
                 thiskill = logtime
                 killtime = ""
@@ -1159,6 +1165,10 @@ def handle_event(line):
             # -----------------------------
             case "MissionRedirected" if "Mission_Massacre" in j["Name"]:
                 state.missions_complete += 1
+                # This mission's kills are complete — remove from required total
+                redirected_kc = state.mission_killcount_map.get(j["MissionID"], 0)
+                if state.kills_required is not None:
+                    state.kills_required = max(0, state.kills_required - redirected_kc)
                 total = len(state.active_missions)
                 done = state.missions_complete
 
@@ -1638,6 +1648,13 @@ def handle_event(line):
                 if "Reward" in j:
                     state.stack_value += j["Reward"]
                     state.mission_value_map[j["MissionID"]] = j["Reward"]
+                if "KillCount" in j:
+                    kc = j["KillCount"]
+                    state.mission_killcount_map[j["MissionID"]] = kc
+                    if state.kills_required is None:
+                        state.kills_required = kc
+                    else:
+                        state.kills_required += kc
 
                 emit(
                     msg_term=(
@@ -1655,6 +1672,12 @@ def handle_event(line):
                 reward = state.mission_value_map.pop(j["MissionID"], 0)
                 if reward:
                     state.stack_value -= reward
+                state.mission_killcount_map.pop(j["MissionID"], None)
+                # Recalculate kills_required from remaining active missions
+                if state.kills_required is not None and state.mission_killcount_map:
+                    state.kills_required = max(0, sum(state.mission_killcount_map.values()) - state.kills_credited)
+                elif not state.mission_killcount_map:
+                    state.kills_required = None
 
                 state.active_missions.remove(j["MissionID"])
 
@@ -2212,6 +2235,77 @@ def bootstrap_missions():
     )
 
 
+
+def bootstrap_kill_counts():
+    """Scan journals for MissionAccepted events to populate mission_killcount_map
+    and compute kills_required for all currently active missions.
+
+    Called after Missions bulk event and after bootstrap_missions(), so
+    state.active_missions is already populated.
+
+    Also accounts for kills already credited this session (kills_credited)
+    and missions already redirected (missions_complete) so the remaining
+    count is accurate on relog."""
+    if not state.active_missions:
+        return
+
+    active_set = set(state.active_missions)
+    killcount_map = {}
+
+    journals = sorted(Path(journal_dir).glob("Journal*.log"))  # oldest first
+    for jpath in journals:
+        try:
+            with open(jpath, mode="r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        je = json.loads(line)
+                    except ValueError:
+                        continue
+                    if (je.get("event") == "MissionAccepted"
+                            and "Mission_Massacre" in je.get("Name", "")
+                            and je.get("MissionID") in active_set
+                            and "KillCount" in je):
+                        killcount_map[je["MissionID"]] = je["KillCount"]
+        except OSError:
+            continue
+
+    if not killcount_map:
+        return
+
+    state.mission_killcount_map = killcount_map
+
+    # kills_required = sum of all required kills, minus kills already credited
+    # this session, minus kills for missions already redirected (complete).
+    # Redirected missions have zero remaining; exclude their full count.
+    redirected_ids = set()
+    # Re-scan briefly for redirected missions (already done elsewhere, but we
+    # need the set here to subtract their counts from the total).
+    for jpath in sorted(Path(journal_dir).glob("Journal*.log")):
+        try:
+            with open(jpath, mode="r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        je = json.loads(line)
+                    except ValueError:
+                        continue
+                    ev = je.get("event")
+                    mid = je.get("MissionID")
+                    if ev == "MissionRedirected" and mid in active_set:
+                        redirected_ids.add(mid)
+                    elif ev in ("MissionCompleted", "MissionAbandoned", "MissionFailed"):
+                        redirected_ids.discard(mid)
+        except OSError:
+            continue
+
+    total_required = sum(
+        kc for mid, kc in killcount_map.items()
+        if mid not in redirected_ids
+    )
+    state.kills_required = max(0, total_required - state.kills_credited)
+    trace(f"Kill count bootstrap: required={state.kills_required} "
+          f"(total={total_required}, credited={state.kills_credited}, "
+          f"redirected={len(redirected_ids)})")
+
 # ----------------------------------------
 # ENTRY POINT
 # ----------------------------------------
@@ -2243,6 +2337,9 @@ def monitor_journal(jfile):
 
         # Bootstrap crew hire time from journal history if not already known
         bootstrap_crew()
+
+        # Bootstrap kill counts for active massacre missions
+        bootstrap_kill_counts()
 
         print("Preload complete. Monitoring live...\n")
 
