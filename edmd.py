@@ -2613,15 +2613,27 @@ def bootstrap_kill_counts():
     state.active_missions is already populated.
 
     target_kill_totals[T] = max issuer sum for target T across all active missions.
-    target_kills_credited[T] = kills against T found in journal history on or after
-    the earliest MissionAccepted timestamp in the current stack — so the counter
-    reflects real progress rather than starting from zero every EDMD launch."""
+    target_kills_credited[T] = kills against T found in journal history after the
+    most recent MissionCompleted for that target faction.
+
+    Kill scan cutoff per target faction:
+      1. Most recent MissionCompleted timestamp for that faction (primary).
+         Kills before this completion were for the previous stack and must not
+         be credited to the current one.
+      2. Earliest MissionAccepted timestamp in the current active stack (fallback
+         when no prior completion exists — e.g. the very first stack ever run).
+
+    Bug this fixes: using the earliest MissionAccepted as the cutoff caused
+    kills made for a previous stack (accepted mid-stack, after the old stack was
+    still active) to be credited to the new stack, yielding 0 kills remaining
+    even when missions were still incomplete."""
     if not state.active_missions:
         return
 
     active_set = set(state.active_missions)
     killcount_map = {}
-    earliest_accept_ts = None
+    earliest_accept_ts_by_target = {}   # TargetFaction -> earliest accept ts in active stack
+    last_completed_ts_by_target = {}    # TargetFaction -> most recent MissionCompleted ts
 
     journals = sorted(Path(journal_dir).glob("Journal*.log"))  # oldest first
     for jpath in journals:
@@ -2632,18 +2644,33 @@ def bootstrap_kill_counts():
                         je = json.loads(line)
                     except ValueError:
                         continue
-                    if (je.get("event") == "MissionAccepted"
+                    ev = je.get("event", "")
+                    mid = je.get("MissionID")
+                    ts = je.get("timestamp", "")
+
+                    if (ev == "MissionAccepted"
                             and "Mission_Massacre" in je.get("Name", "")
-                            and je.get("MissionID") in active_set
+                            and mid in active_set
                             and "KillCount" in je):
-                        killcount_map[je["MissionID"]] = je["KillCount"]
-                        if "TargetFaction" in je:
-                            state.mission_target_faction_map[je["MissionID"]] = je["TargetFaction"]
+                        killcount_map[mid] = je["KillCount"]
+                        tf = je.get("TargetFaction", "")
+                        if tf:
+                            state.mission_target_faction_map[mid] = tf
+                            # Track earliest accept in active stack per target
+                            if tf not in earliest_accept_ts_by_target or ts < earliest_accept_ts_by_target[tf]:
+                                earliest_accept_ts_by_target[tf] = ts
                         if "Faction" in je:
-                            state.mission_issuing_faction_map[je["MissionID"]] = je["Faction"]
-                        ts = je.get("timestamp", "")
-                        if ts and (earliest_accept_ts is None or ts < earliest_accept_ts):
-                            earliest_accept_ts = ts
+                            state.mission_issuing_faction_map[mid] = je["Faction"]
+
+                    elif ev == "MissionCompleted" and ts:
+                        # Track most recent completion per target faction.
+                        # We must look up the TargetFaction from MissionAccepted history
+                        # since MissionCompleted also carries it.
+                        tf = je.get("TargetFaction", "")
+                        if tf and (tf not in last_completed_ts_by_target
+                                   or ts > last_completed_ts_by_target[tf]):
+                            last_completed_ts_by_target[tf] = ts
+
         except OSError:
             continue
 
@@ -2654,12 +2681,22 @@ def bootstrap_kill_counts():
     recalc_target_kill_totals()
 
     # Pre-credit kills from journal history: scan for Bounty/FactionKillBond
-    # events on or after the earliest MissionAccepted timestamp in this stack.
-    # This ensures the counter reflects actual progress when EDMD is launched
-    # mid-session or after a relog.
+    # events strictly after the kill scan cutoff for each target faction.
+    # Cutoff = most recent MissionCompleted for that target (previous stack cleared),
+    # falling back to earliest MissionAccepted in the active stack if no prior
+    # completion exists.
     state.target_kills_credited = {}
-    if earliest_accept_ts and state.target_kill_totals:
+    if state.target_kill_totals:
         target_factions = set(state.target_kill_totals.keys())
+        # Build per-faction cutoff timestamps
+        cutoff_by_target = {}
+        for tf in target_factions:
+            if tf in last_completed_ts_by_target:
+                cutoff_by_target[tf] = last_completed_ts_by_target[tf]
+            elif tf in earliest_accept_ts_by_target:
+                cutoff_by_target[tf] = earliest_accept_ts_by_target[tf]
+            # If neither found, no cutoff — don't credit any kills (safe default)
+
         for jpath in journals:
             try:
                 with open(jpath, mode="r", encoding="utf-8") as f:
@@ -2668,13 +2705,17 @@ def bootstrap_kill_counts():
                             je = json.loads(line)
                         except ValueError:
                             continue
-                        if (je.get("event") in ("Bounty", "FactionKillBond")
-                                and je.get("timestamp", "") >= earliest_accept_ts):
-                            vf = je.get("VictimFaction", "")
-                            if vf in target_factions:
-                                state.target_kills_credited[vf] = (
-                                    state.target_kills_credited.get(vf, 0) + 1
-                                )
+                        if je.get("event") not in ("Bounty", "FactionKillBond"):
+                            continue
+                        vf = je.get("VictimFaction", "")
+                        if vf not in target_factions:
+                            continue
+                        ts = je.get("timestamp", "")
+                        cutoff = cutoff_by_target.get(vf, "")
+                        if cutoff and ts > cutoff:
+                            state.target_kills_credited[vf] = (
+                                state.target_kills_credited.get(vf, 0) + 1
+                            )
             except OSError:
                 continue
 
