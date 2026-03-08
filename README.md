@@ -47,16 +47,19 @@ When things go wrong — your fighter blown up, hull taking critical damage, fue
 <details open>
 <summary><strong>📊 Periodic Summaries</strong></summary>
 
-Delivered every 10 kills and on session end — to the terminal/GUI event log and to Discord:
+Posted every 15 minutes (while at least one kill has been recorded) — to the terminal/GUI event log and optionally to Discord:
 
 ```
-📊 Session Summary:
+Session Summary:
 - Duration: 2:14:33
-- Kills:    67 | 29.9 /hr
+- Kills:    67 | 29.9 /hr | avg 0:53/kill
 - Bounties: 5.61M | 2.50M /hr
 - Missions: 386.32M stack (18/20 complete, 2 remaining)
-- Merits:   1072 | 478.3 /hr
+- Progress: 67/255 kills vs Bhutatani Partnership | 386.32M stack
+- Merits:   1072 | 478 /hr
 ```
+
+The `Progress` line appears for each target faction when massacre missions are active. The `avg X/kill` interval is included once more than one kill has been recorded.
 
 <div align="center">
 <img src="images/discord_periodic_summary.png" alt="Discord periodic session summary" width="560"/>
@@ -72,6 +75,7 @@ Delivered every 10 kills and on session end — to the terminal/GUI event log an
 - Bootstraps mission state from full journal history on startup — works correctly even when launched mid-session, after a relog, or when missions were accepted in a previous game session
 - Filters expired missions automatically using embedded expiry timestamps
 - Notifies when kills are completed for individual missions and when the entire stack is ready to turn in
+- Announces when the stack reaches its configured maximum size (default 20 missions)
 - Displays stack value and completion status in the startup banner and GUI
 
 </details>
@@ -135,7 +139,7 @@ Launch with `--gui` or set `Enabled = true` in `[GUI]` of `config.toml`.
 
 - Alerts after a configurable number of minutes with no kills
 - Alerts when average kill rate drops below a configurable kills/hour threshold
-- Both warnings use cooldown and exponential backoff to avoid spam
+- Both warnings use a flat cooldown (default 15 minutes, configurable via `WarnCooldown`) to avoid spam
 
 </details>
 
@@ -226,11 +230,21 @@ On launch, EDMD preloads the current journal, bootstraps mission state, then pri
   CMDR CALURSUS
   Type-10 Defender  |  Solo
   Expert +56%
+  A. Lavigny-Duval  Rank 22  (152,198 merits)
+  Bhutatani
   Stack: 386.32M (18/20 complete, 2 remaining)
+  Kills: 97/255 vs Bhutatani Partnership
 ==========================================
 ```
 
-The `Stack` line is omitted when no active massacre missions are detected.
+Conditional lines appear only when the relevant data is available:
+
+| Line | Condition |
+|------|-----------|
+| Powerplay allegiance | Only when pledge is active |
+| Location | Only when star system is known |
+| Stack | Only when massacre missions are active |
+| Kills | Only when target kill quotas are tracked |
 
 <div align="center">
 <img src="images/terminal_launch_notice.png" alt="Terminal launch banner" width="660"/>
@@ -241,7 +255,7 @@ The `Stack` line is omitted when no active massacre missions are detected.
 
 ## Terminal Output
 
-When running without a GUI, EDMD prints timestamped event lines to the terminal. Each line is prefixed with a fixed-width sigil indicating event category and urgency:
+EDMD prints timestamped event lines to the terminal. Each line carries a fixed-width sigil indicating event category and urgency. When running in GUI mode, terminal output is suppressed and the event log panel receives the same messages with emoji prefixes instead of sigils.
 
 ```
 [14:23:07] *  KILL  Anaconda [Bhutatani Partnership] +4 [30.25M cr]
@@ -290,6 +304,8 @@ When running without a GUI, EDMD prints timestamped event lines to the terminal.
 </div>
 
 ---
+
+## Discord Integration
 
 EDMD sends structured notifications to a Discord channel via webhook.
 
@@ -352,6 +368,19 @@ This means spacing fixes and layout changes apply to all themes at once, and cre
 | `default-red` | 🔴 Red `#cc3333` | |
 | `default-yellow` | 🟡 Yellow `#d4a017` | |
 | `default-light` | System | Accent follows your Adwaita GTK theme |
+
+The avatar mark in the GUI sidebar adapts to the active theme:
+
+<div align="center">
+<img src="images/edmd_avatar_512.png" width="80" alt="default" title="default"/>
+<img src="images/edmd_avatar_blue_512.png" width="80" alt="default-blue" title="default-blue"/>
+<img src="images/edmd_avatar_green_512.png" width="80" alt="default-green" title="default-green"/>
+<img src="images/edmd_avatar_purple_512.png" width="80" alt="default-purple" title="default-purple"/>
+<img src="images/edmd_avatar_red_512.png" width="80" alt="default-red" title="default-red"/>
+<img src="images/edmd_avatar_yellow_512.png" width="80" alt="default-yellow" title="default-yellow"/>
+<img src="images/edmd_avatar_light_512.png" width="80" alt="default-light" title="default-light"/>
+<br><em>default · blue · green · purple · red · yellow · light</em>
+</div>
 
 Select a theme in `config.toml`:
 
@@ -418,6 +447,10 @@ The theme name is the path relative to `themes/`, without the `.css` extension.
 | `PirateNames` | `false` | ✅ | Show pirate pilot names in kill and scan messages |
 | `ExtendedStats` | `false` | ✅ | Show running kill counts and per-faction tallies |
 | `MinScanLevel` | `1` | ✅ | Minimum scan stage required to log an outbound scan (0 = all) |
+| `FullStackSize` | `20` | ✅ | Mission stack size that triggers the "stack full" announcement |
+| `WarnCooldown` | `15` | ✅ | Minutes between repeated inactivity / kill-rate alerts |
+| `WarnNoKillsInitial` | `5` | ✅ | Minutes before the *first* inactivity alert fires (subsequent alerts use `WarnNoKills`) |
+| `TruncateNames` | `30` | ✅ | Maximum character length for pilot/faction names in output |
 
 ### `[Discord]`
 
@@ -460,10 +493,7 @@ All entries are hot-reloadable. Controls terminal, Discord, and GUI event log ou
 | `MissionUpdate` | `2` | Mission accepted, completed, redirected, or removed |
 | `AllMissionsReady` | `3` | All active massacre missions ready to turn in |
 | `MeritEvent` | `0` | Individual merit gain from a kill |
-| `PeriodicKills` | `2` | Kill count in periodic summary |
-| `PeriodicCredits` | `2` | Bounty/bond credit total in periodic summary |
-| `PeriodicMerits` | `2` | Merit total in periodic summary |
-| `PeriodicFaction` | `0` | Top faction breakdown in periodic summary |
+
 | `InactiveAlert` | `3` | No kills for the configured time period |
 | `RateAlert` | `3` | Kill rate below the configured threshold |
 | `InboundScan` | `0` | Incoming cargo scan from a pirate |
