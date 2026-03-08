@@ -42,7 +42,7 @@ def abort(message):
 PROGRAM = "Elite Dangerous Monitor Daemon"
 DESC = "Continuous monitoring of Elite Dangerous AFK sessions."
 AUTHOR = "CMDR CALURSUS"
-VERSION = "20260308"
+VERSION = "20260308a"
 GITHUB_REPO = "drworman/EDMD"
 DEBUG_MODE = False
 
@@ -538,6 +538,9 @@ trace_mode = args.trace if args.trace is not None else DEBUG_MODE
 gui_mode = False
 gui_queue = queue.Queue()
 
+# Monotonic timestamp of EDMD startup — used for startup grace period in offline detection
+_edmd_start_mono: float = time.monotonic()
+
 
 # ── Status.json polling thread ────────────────────────────────────────────────
 # Reads Status.json every ~0.5s and updates state.ship_shields (and future
@@ -676,6 +679,9 @@ class MonitorState:
         self.last_periodic_summary = None   # monotonic time of last timed summary
         self.last_inactive_alert = None     # monotonic time of last inactivity alert
         self.last_rate_alert = None         # monotonic time of last rate alert
+        self.last_offline_alert = None      # monotonic time of last not-in-game alert
+        self.offline_since_mono = None      # monotonic time when not-in-game was first detected
+        self.in_game = False                # True once LoadGame fires; False on MainMenu/Shutdown
         self.mission_value_map = {}
         self.stack_value = 0
         self.has_fighter_bay = False      # True when current ship's Loadout includes a fighter bay
@@ -685,10 +691,11 @@ class MonitorState:
         # Per-target-faction kill tracking.
         # target_kill_totals[T] = max( sum(KillCounts) per issuing faction ) for target T
         #   Recalculated on MissionAccepted / MissionCompleted / Abandoned / Failed.
-        #   NOT changed on MissionRedirected (mission still live until reward collected).
+        #   Does NOT include redirected missions — their quota is already met.
         # target_kills_credited[T] = kills against T observed live (post-preload).
         self.target_kill_totals   = {}  # TargetFaction -> int (bottleneck total)
         self.target_kills_credited = {} # TargetFaction -> int (live kills since tracking started)
+        self.mission_redirected_set = set()  # MissionIDs whose kill quota is met (MissionRedirected)
 
         # SLF state
         self.slf_deployed = False
@@ -1417,7 +1424,9 @@ def handle_event(line):
             case "MissionRedirected" if "Mission_Massacre" in j["Name"]:
                 state.missions_complete += 1
                 # MissionRedirected = kills quota met, but mission still live until
-                # reward is collected.  Do NOT change totals or credited counts.
+                # reward is collected. Track the ID so recalc excludes it from totals.
+                state.mission_redirected_set.add(j["MissionID"])
+                recalc_target_kill_totals()
                 total = len(state.active_missions)
                 done = state.missions_complete
 
@@ -1657,6 +1666,9 @@ def handle_event(line):
             # -----------------------------
             case "Music" if j["MusicTrack"] == "MainMenu":
                 state.sessionend()
+                state.in_game = False
+                if state.offline_since_mono is None:
+                    state.offline_since_mono = time.monotonic()
 
                 emit(
                     msg_term="Exited to main menu",
@@ -1671,6 +1683,9 @@ def handle_event(line):
                 # SLF state is NOT reset here — the fighter remains deployed in the same
                 # position after a relog or force-close. State carries through from preload.
                 state.crew_active = False
+                state.in_game = True
+                state.offline_since_mono = None   # back in game — clear offline clock
+                state.last_offline_alert = None   # allow fresh alert if they go offline again
                 if "Ship_Localised" in j:
                     state.pilot_ship = j["Ship_Localised"]
                 elif "Ship" in j:
@@ -1958,10 +1973,12 @@ def handle_event(line):
                     and state.target_kill_totals
                 ):
                     for _t, _n in sorted(state.target_kill_totals.items()):
+                        _credited = state.target_kills_credited.get(_t, 0)
+                        _remaining = max(0, _n - _credited)
                         _stack_line = (
                             f"Stack full ({total_now} missions) — "
                             f"{fmt_credits(state.stack_value)} | "
-                            f"{_n:,} kills vs {_t}"
+                            f"{_remaining:,} kills needed vs {_t}"
                         )
                         emit(
                             msg_term=_stack_line,
@@ -1974,15 +1991,17 @@ def handle_event(line):
             case "MissionAbandoned" | "MissionCompleted" | "MissionFailed" if (
                 state.missions and j["MissionID"] in state.active_missions
             ):
-                reward = state.mission_value_map.pop(j["MissionID"], 0)
+                mid = j["MissionID"]
+                reward = state.mission_value_map.pop(mid, 0)
                 if reward:
                     state.stack_value -= reward
-                state.mission_killcount_map.pop(j["MissionID"], None)
-                state.mission_target_faction_map.pop(j["MissionID"], None)
-                state.mission_issuing_faction_map.pop(j["MissionID"], None)
+                state.mission_killcount_map.pop(mid, None)
+                state.mission_target_faction_map.pop(mid, None)
+                state.mission_issuing_faction_map.pop(mid, None)
+                state.mission_redirected_set.discard(mid)
                 recalc_target_kill_totals()
 
-                state.active_missions.remove(j["MissionID"])
+                state.active_missions.remove(mid)
 
                 if state.missions_complete > 0:
                     state.missions_complete -= 1
@@ -2099,6 +2118,10 @@ def handle_event(line):
                 )
 
             case "Shutdown":
+                state.in_game = False
+                if state.offline_since_mono is None:
+                    state.offline_since_mono = time.monotonic()
+
                 emit(
                     msg_term="Quit to desktop",
                     emoji="🛑",  sigil="-  INFO",
@@ -2246,9 +2269,10 @@ def emit_summary(stats, logtime=None):
         if state.target_kill_totals:
             for target, total_needed in sorted(state.target_kill_totals.items()):
                 credited = state.target_kills_credited.get(target, 0)
+                remaining = max(0, total_needed - credited)
                 summary_text += (
-                    f"- Progress: {credited:,}/{total_needed:,} kills vs {target} "
-                    f"| {fmt_credits(state.stack_value)} stack\n"
+                    f"- Kills:    {remaining:,} remaining vs {target}"
+                    f" | {fmt_credits(state.stack_value)} stack\n"
                 )
 
     summary_text += f"- Merits:   {stats.merits:,}{sep}{int(merits_per_hour):,} /hr"
@@ -2302,6 +2326,25 @@ def _release_handle(pattern: str, description: str):
 def _flush_session():
     if not _pcfg("_adv_session_mgmt") or not _FX_READY:return
     _release_handle("EliteDangerous64.exe","Elite Dangerous")
+
+
+def _max_notify_level() -> int:
+    """Return the highest loglevel configured across all notify categories.
+    Used to send offline/menu alerts at the most prominent level the profile uses."""
+    return max((v for v in notify_levels.values() if isinstance(v, int)), default=2)
+
+
+_ED_PROCESS_NAMES = {"EliteDangerous64.exe", "EliteDangerous32.exe", "EliteDangerous.exe"}
+
+def _ed_client_running() -> bool:
+    """Return True if any Elite Dangerous game client process is found."""
+    try:
+        for proc in psutil.process_iter(["name"]):
+            if proc.info.get("name") in _ED_PROCESS_NAMES:
+                return True
+    except Exception:
+        pass
+    return False
 
 
 # ----------------------------------------
@@ -2594,6 +2637,7 @@ def bootstrap_missions():
     state.mission_value_map = {mid: data["reward"] for mid, data in accepted.items()}
     state.stack_value = sum(data["reward"] for data in accepted.values())
     state.missions_complete = len(active_redirected)
+    state.mission_redirected_set = active_redirected  # MissionIDs whose quota is already met
     state.missions = True
 
     print(
@@ -2608,18 +2652,24 @@ def bootstrap_missions():
 def recalc_target_kill_totals():
     """Rebuild state.target_kill_totals from current mission maps.
 
-    For each target faction T, find every issuing faction I that has active
-    missions targeting T, sum their KillCounts, then take the max — that is
-    the bottleneck (the hardest issuer gates completion for T).
+    For each target faction T, find every issuing faction I that has OPEN
+    (not yet redirected) missions targeting T, sum their KillCounts, then
+    take the max — that is the bottleneck (the hardest issuer gates completion
+    for T).
+
+    Redirected missions are excluded: their kill quota is already met, so
+    including them would inflate the displayed total beyond what is actually
+    needed to close out the stack.
 
     Call this after any MissionAccepted, MissionCompleted, MissionAbandoned,
-    or MissionFailed event.  Do NOT call on MissionRedirected — the mission
-    remains live until the reward is collected.
+    MissionFailed, or MissionRedirected event.
     """
     from collections import defaultdict
-    # issuer_sums[target][issuer] = sum of killcounts
+    # issuer_sums[target][issuer] = sum of killcounts for OPEN (non-redirected) missions only
     issuer_sums = defaultdict(lambda: defaultdict(int))
     for mid, kc in state.mission_killcount_map.items():
+        if mid in state.mission_redirected_set:
+            continue  # quota already met — do not inflate the bottleneck
         target  = state.mission_target_faction_map.get(mid)
         issuer  = state.mission_issuing_faction_map.get(mid)
         if target and issuer:
@@ -2630,7 +2680,7 @@ def recalc_target_kill_totals():
         new_totals[target] = max(issuers.values())
 
     state.target_kill_totals = new_totals
-    # Prune credited counts for targets that no longer have active missions
+    # Prune credited counts for targets that no longer have active open missions
     for t in list(state.target_kills_credited):
         if t not in new_totals:
             del state.target_kills_credited[t]
@@ -2823,7 +2873,8 @@ def monitor_journal(jfile):
             if state.target_kill_totals:
                 for _target, _needed in sorted(state.target_kill_totals.items()):
                     _credited = state.target_kills_credited.get(_target, 0)
-                    kill_lines += f"  Kills: {_credited:,}/{_needed:,} vs {_target}\n"
+                    _remaining = max(0, _needed - _credited)
+                    kill_lines += f"  Kills: {_remaining:,} remaining vs {_target}\n"
         else:
             stack_line = ""
             kill_lines = ""
@@ -2951,7 +3002,73 @@ def monitor_journal(jfile):
 
                 now_mono = time.monotonic()
 
-                # ── Periodic 15-minute session summary ────────────────────────
+                # ── Not-in-game detection ──────────────────────────────────────
+                # Check for: game client not running, or player at main menu.
+                # Grace periods:
+                #   - 5 min from EDMD startup (state.offline_since_mono is None and
+                #     not state.in_game: we haven't seen a LoadGame yet)
+                #   - 15 min from the point we detected the player left the game
+                #     (state.offline_since_mono is set by MainMenu / Shutdown)
+                # After grace: notify at max configured level, re-alert hourly.
+                # While not in game (and grace expired): suppress all other output.
+                OFFLINE_STARTUP_GRACE   = 5  * 60   # seconds before first check
+                OFFLINE_MENU_GRACE      = 15 * 60   # seconds of grace after menu/quit
+                OFFLINE_RENOTIFY        = 60 * 60   # re-alert interval (1 hour)
+                _startup_elapsed = now_mono - _edmd_start_mono
+
+                # Determine whether we are currently considered offline
+                _not_in_game = not state.in_game and not state.in_preload
+
+                if _not_in_game:
+                    # First time we notice: start the offline clock if not already set
+                    # (handles the case where ED was never detected at EDMD startup)
+                    if state.offline_since_mono is None:
+                        state.offline_since_mono = now_mono
+
+                    offline_elapsed = now_mono - state.offline_since_mono
+
+                    # Choose which grace applies:
+                    #   - If we haven't seen LoadGame at all yet, use startup grace
+                    #   - Otherwise use the menu/quit grace
+                    if _startup_elapsed < OFFLINE_STARTUP_GRACE:
+                        _grace_ok = False   # still inside startup window
+                    elif offline_elapsed < OFFLINE_MENU_GRACE:
+                        _grace_ok = False   # still inside menu/quit window
+                    else:
+                        _grace_ok = True
+
+                    if _grace_ok:
+                        # Check whether ED client is actually running (process check)
+                        _ed_up = _ed_client_running()
+                        _reason = (
+                            "Elite Dangerous client not detected"
+                            if not _ed_up
+                            else "Player at main menu — not in session"
+                        )
+
+                        cooldown_ok = (
+                            state.last_offline_alert is None
+                            or now_mono - state.last_offline_alert >= OFFLINE_RENOTIFY
+                        )
+                        if cooldown_ok:
+                            _level = _max_notify_level()
+                            emit(
+                                msg_term=f"Not in game: {_reason}",
+                                msg_discord=f"⛔ **Not in game** — {_reason}",
+                                emoji="⛔",  sigil="!  WARN",
+                                timestamp=state.event_time,
+                                loglevel=_level,
+                            )
+                            state.last_offline_alert = now_mono
+
+                        # Suppress all further output this tick while not in game
+                        continue
+                else:
+                    # Back in game — reset offline tracking
+                    # (also reset here in case LoadGame event arrived before this tick)
+                    state.offline_since_mono = None
+
+
                 SUMMARY_INTERVAL = 15 * 60  # seconds
                 if (
                     state.session_start_time

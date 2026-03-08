@@ -763,7 +763,7 @@ class EdmdWindow(Gtk.ApplicationWindow):
                 self._kill_rows_box.remove(self._kill_rows_box.get_first_child())
             if s.target_kill_totals:
                 for target in sorted(s.target_kill_totals):
-                    total   = s.target_kill_totals[target]
+                    total    = s.target_kill_totals[target]
                     credited = s.target_kills_credited.get(target, 0)
                     remaining = max(0, total - credited)
                     row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -773,7 +773,7 @@ class EdmdWindow(Gtk.ApplicationWindow):
                     lbl_name.set_xalign(0.0)
                     lbl_name.set_ellipsize(Pango.EllipsizeMode.END)
                     row.append(lbl_name)
-                    lbl_val = make_label(f"{remaining} / {total}", css_class="data-value")
+                    lbl_val = make_label(f"{remaining:,} kills", css_class="data-value")
                     lbl_val.set_hexpand(False)
                     lbl_val.set_xalign(1.0)
                     row.append(lbl_val)
