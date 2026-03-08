@@ -552,6 +552,14 @@ This means your stack value and completion count are accurate from the moment mo
 
 ---
 
+## Remote Access
+
+EDMD supports a two-machine setup where the GUI runs on a secondary machine (e.g. a laptop) while the game and all Discord notifications run on your main machine. The secondary machine mounts the journal directory over SSH and connects as a read-only GUI front-end.
+
+**→ See [docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md) for full setup instructions**, including passwordless SSH configuration, optional DuckDNS WAN access, the `[REMOTE]` config profile, and the context-aware `edmd_launch.sh` launcher script.
+
+---
+
 ## Notes
 
 - **Fuel alerts** trigger on *either* the percentage threshold *or* the estimated time-remaining threshold — whichever fires first.

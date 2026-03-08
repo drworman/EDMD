@@ -1,5 +1,5 @@
 # ==============================================================================
-# ED Monitor Daemon (EDMonD) - config.toml
+# ED Monitor Daemon (EDMD) - config.toml
 # ==============================================================================
 #
 # HOT-RELOAD: EDMD monitors this file for changes while running.
@@ -12,24 +12,28 @@
 # [RESTART] Path to Elite Dangerous journal folder.
 # Required - no default. Change requires restart as the file handle must reopen.
 # JournalFolder = '\\SOMENETWORKSHARE\Users\me\Saved Games\Frontier Developments\Elite Dangerous'
-# JournalFolder = ""
+# JournalFolder = "/home/username/games/ED-Logs/EDP1"
 
 # [HOT] Use UTC timestamps instead of local time (Default: false)
 UseUTC = false
 
 # [HOT] Send a warning if kills/hour drop below this amount (Default: 20)
-# Log level: 'KillRate'
-WarnKillRate = 1
+WarnKillRate = 20
 
 # [HOT] Minutes since last kill before sending a no-kill warning (Default: 20)
-# Log level: 'NoKills'
-WarnNoKills = 60
+WarnNoKills = 20
+
+# [HOT] Minutes between repeated inactivity / kill-rate alerts (Default: 15)
+WarnCooldown = 15
+
+# [HOT] Mission stack size that triggers the "stack full" announcement (Default: 20)
+FullStackSize = 20
 
 # [HOT] Show faction name on each kill (Default: false)
 BountyFaction = false
 
 # [HOT] Show credits earned on each kill (Default: false)
-BountyValue = true
+BountyValue = false
 
 # [HOT] Show extra stats e.g. kill counts and faction tallies (Default: false)
 ExtendedStats = false
@@ -41,12 +45,11 @@ PirateNames = false
 MinScanLevel = 1
 
 
-
 [Discord]
 
 # [RESTART] Discord webhook URL.
 # The webhook object is built once at startup and cannot be changed on the fly.
-# WebhookURL = 'https://justanexample.fake/api/webhooks/lotsofnumbers/lotsoflettersnumbersandsymbols'
+# WebhookURL = 'https://discord.com/api/webhooks/1234567890/your-webhook-token-here'
 WebhookURL = ''
 
 # [RESTART] Your Discord user ID for pings (numbers only).
@@ -60,7 +63,7 @@ ForumChannel = false
 # [RESTART] Append a timestamp to Discord messages (Default: true)
 Timestamp = false
 
-# [RESTART] Use ED Monitor Daemon's (EDMonD's) default webhook name and avatar (Default: true)
+# [RESTART] Use EDMD's default webhook name and avatar (Default: true)
 # Set false to use the name/avatar configured in Discord's webhook settings.
 Identity = true
 
@@ -75,63 +78,105 @@ ThreadCmdrNames = false
 # All notification levels are [HOT] - changes take effect on the next matching event.
 #
 # 0 = None
-# 1 = Terminal only
-# 2 = Terminal & Discord
-# 3 = Terminal & Discord with user ping
+# 1 = Terminal / GUI only
+# 2 = Terminal / GUI + Discord
+# 3 = Terminal / GUI + Discord with @mention ping
 
-RewardEvent = 2
-FighterDamage = 2         # Fighter hull integrity loss (20% increments)
-FighterLost = 3         # Fighter destroyed
-ShieldEvent = 3         # Ship shield failure
-HullEvent = 3            # Ship hull damage (20% increments)
-Died = 3                # Ship destruction
-CargoLost = 3           # Cargo stolen
-LowCargoValue = 3        # NPC declined to attack due to low cargo value
-PoliceScan = 0        # Security vessels scanned
-PoliceAttack = 3      # Security vessel attack warning
-FuelStatus = 2          # Fuel level status report
-FuelWarning = 3             # Fuel level warning threshold
-FuelCritical = 3        # Fuel level critical (under 10%)
-MissionUpdate = 2            # Mission kill objective reached
-AllMissionsReady = 3         # All mission objectives reached
-PeriodicKills = 2        # Periodic kill summary (every 10 kills and on exit)
-PeriodicCredits = 2     # Periodic credit summary
-MeritEvent = 0              # Individual merit gain events (powerplay-only)
-PeriodicMerits = 2       # Periodic merit summary (powerplay-only)
-InactiveAlert = 3             # Alert: no kills for configured period ('WarnNoKills' in Settings)
-RateAlert = 3            # Alert: kill rate below configured threshold ('WarnKillRate' in Settings)
-InboundScan = 0
-PeriodicFaction = 0
+RewardEvent      = 2   # Each kill — bounty or combat bond
+FighterDamage    = 2   # Fighter hull integrity loss (~20% increments)
+FighterLost      = 3   # Fighter destroyed
+ShieldEvent      = 3   # Ship shield dropped or raised
+HullEvent        = 3   # Ship hull damage
+Died             = 3   # Ship destroyed
+CargoLost        = 3   # Cargo stolen
+LowCargoValue    = 2   # NPC declined to attack due to low cargo value
+PoliceScan       = 0   # Security vessel scanned your ship
+PoliceAttack     = 3   # Security vessel is attacking you
+FuelStatus       = 1   # Routine fuel level report
+FuelWarning      = 2   # Fuel below warning threshold
+FuelCritical     = 3   # Fuel below critical threshold
+MissionUpdate    = 2   # Mission accepted, completed, redirected, or removed
+AllMissionsReady = 3   # All active massacre missions ready to turn in
+MeritEvent       = 0   # Individual merit gain from a kill (powerplay only)
+InactiveAlert    = 3   # No kills for the configured time period
+RateAlert        = 3   # Kill rate below the configured threshold
+InboundScan      = 0   # Incoming cargo scan from a pirate
 
-# ── GUI ─────────────────────────────────────────────────────────────────────
-# Launch the GTK4 graphical interface instead of (or alongside) terminal output.
+
+# ── GUI ──────────────────────────────────────────────────────────────────────
+# Launch the GTK4 graphical interface alongside terminal output.
 # Requires PyGObject: pacman -S python-gobject gtk4
 #
 [GUI]
-Enabled = true              # set false or true (or use --gui flag to force gui)
-Theme   = "default-green"   # palette filename in themes/ without .css extension
+Enabled = false             # set true, or use --gui flag at launch
+Theme   = "default"         # palette filename in themes/ without .css extension
                             # built-in: "default", "default-dark",
-                            # "default-light", "default-blue", "default-green",
-                            # "default-purple", "default-red", "default-yellow"
-                            # custom:   "custom/mytheme"  (copy themes/custom/my-theme.css
-                            #           to get started — only colour vars needed)
+                            #           "default-light", "default-blue",
+                            #           "default-green", "default-purple",
+                            #           "default-red", "default-yellow"
+                            # custom:   "custom/mytheme"
+                            #           (copy themes/custom/my-theme.css to start)
+
 
 # ==============================================================================
 # Custom profiles (advanced)
 # ==============================================================================
 # Profiles override any setting above for a specific commander or use case.
-# Load a profile with -p <profilename> on the command line, or name it after
-# your commander name for automatic selection.
-# [RESTART] Profile selection itself requires a restart.
+# Load a profile with:  edmd.py -p ProfileName
+# Or name the profile after your commander for automatic selection at startup.
+#
+# [RESTART] Profile selection requires a restart.
 # Individual settings within a profile follow the same HOT/RESTART rules above.
 # ==============================================================================
 
 [EDP1]
 Settings.JournalFolder = "/home/username/games/ED-Logs/EDP1"
-Discord.UserID = 123456789098765432
-Discord.WebhookURL = ''
+Discord.UserID         = 123456789098765432
+Discord.WebhookURL     = 'https://discord.com/api/webhooks/1234567890/your-webhook-token-here'
 
 [EDP2]
 Settings.JournalFolder = "/home/username/games/ED-Logs/EDP2"
-Discord.UserID = 123456789098765432
-Discord.WebhookURL = ''
+Discord.UserID         = 123456789098765432
+Discord.WebhookURL     = 'https://discord.com/api/webhooks/1234567890/your-webhook-token-here'
+
+
+# ==============================================================================
+# [REMOTE] profile — GUI front-end for remote monitoring
+# ==============================================================================
+# Used when running EDMD on a second machine (e.g. a laptop) against a game
+# machine's journal directory, mounted via sshfs.
+#
+# Discord is intentionally disabled — the game machine's EDMD instance handles
+# all webhook output. This instance provides the GUI only.
+#
+# See docs/REMOTE_ACCESS.md for full setup instructions.
+# ==============================================================================
+
+[REMOTE]
+Settings.JournalFolder = "/home/username/mnt/ed-journals"
+GUI.Enabled            = true
+GUI.Theme              = "default"
+Discord.WebhookURL     = ""
+Discord.UserID         = 0
+Discord.Identity       = false
+
+[REMOTE.LogLevels]
+RewardEvent      = 1
+FighterDamage    = 1
+FighterLost      = 1
+ShieldEvent      = 1
+HullEvent        = 1
+Died             = 1
+CargoLost        = 1
+LowCargoValue    = 1
+PoliceScan       = 1
+PoliceAttack     = 1
+FuelStatus       = 1
+FuelWarning      = 1
+FuelCritical     = 1
+MissionUpdate    = 1
+AllMissionsReady = 1
+MeritEvent       = 1
+InactiveAlert    = 1
+RateAlert        = 1
+InboundScan      = 1
