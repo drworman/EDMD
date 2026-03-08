@@ -135,6 +135,16 @@ Settings.JournalFolder = "/home/username/mnt/ed-journals"
 Replace `username` with your actual username. Leave everything else as-is — the
 profile disables Discord and sets all log levels to GUI-only automatically.
 
+`config.toml` lives in the EDMD user data directory:
+
+| Platform | Path |
+|----------|------|
+| Linux | `~/.local/share/EDMD/config.toml` |
+| Windows | `%APPDATA%\EDMD\config.toml` |
+| macOS | `~/Library/Application Support/EDMD/config.toml` |
+
+On Linux, `~/.config/EDMD` is a symlink to the same directory.
+
 ---
 
 ## Step 4 — The launcher script
@@ -146,15 +156,21 @@ the correct local instance automatically.
 **Configure the script** — edit the variables at the top:
 
 ```bash
-DESKTOP_SHORT="gamestation"          # short hostname of the game machine
-LAPTOP_SHORT="laptop"                # short hostname of the secondary machine
+DESKTOP_SHORT="gamestation"           # short hostname of the game machine
+LAPTOP_SHORT="laptop"                 # short hostname of the secondary machine
 
-DESKTOP_LAN="gamestation.local.net"  # LAN hostname / IP for game machine
+DESKTOP_LAN="gamestation.local.net"   # LAN hostname / IP for game machine
 DESKTOP_WAN="gamestation.duckdns.org" # WAN hostname (DuckDNS or similar)
 
 JOURNAL_REMOTE="${HOME}/games/ED-Logs/EDP1"  # journal path on game machine
 MOUNT_LOCAL="${HOME}/mnt/ed-journals"         # where to mount it locally
+
+EDMD_DIR="$HOME/.local/bin/EDMD"  # path to your EDMD installation
 ```
+
+`config.toml` does not need to be referenced in the script — EDMD finds it
+automatically in `~/.local/share/EDMD/config.toml` on both machines (since your
+home directory is synced, both machines share the same config file).
 
 Set `DESKTOP_SHORT` and `LAPTOP_SHORT` to match what `hostname -s` returns on
 each machine. If you are not using WAN access, you can set `DESKTOP_WAN` to the

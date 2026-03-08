@@ -209,8 +209,10 @@ bash install.sh          # Linux
 install.bat              # Windows
 
 # Configure (set JournalFolder at minimum)
-cp example.config.toml config.toml
-nano config.toml
+# config.toml lives in your user data directory — install.sh creates it for you
+# Linux: ~/.local/share/EDMD/config.toml
+# Windows: %APPDATA%\EDMD\config.toml
+nano ~/.local/share/EDMD/config.toml
 
 # Run
 ./edmd.py              # terminal mode

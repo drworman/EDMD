@@ -142,16 +142,30 @@ done
 # ── Config setup ──────────────────────────────────────────────────────────────
 section "Configuration"
 
-if [ ! -f "$REPO_DIR/config.toml" ]; then
-    if [ -f "$REPO_DIR/example.config.toml" ]; then
-        cp "$REPO_DIR/example.config.toml" "$REPO_DIR/config.toml"
-        ok "Created config.toml from example"
-    else
-        warn "No config.toml or example.config.toml found."
-        warn "You will need to create config.toml before running EDMD."
-    fi
+# Resolve user data directory (mirrors _user_data_dir() in edmd.py)
+XDG_DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
+EDMD_DATA_DIR="$XDG_DATA/EDMD"
+mkdir -p "$EDMD_DATA_DIR"
+
+# Create ~/.config/EDMD symlink for XDG hygiene if not already present
+XDG_CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
+CONFIG_LINK="$XDG_CFG/EDMD"
+if [ ! -e "$CONFIG_LINK" ] && [ ! -L "$CONFIG_LINK" ]; then
+    ln -s "$EDMD_DATA_DIR" "$CONFIG_LINK" 2>/dev/null &&         ok "Created symlink: $CONFIG_LINK → $EDMD_DATA_DIR" || true
+fi
+
+USER_CONFIG="$EDMD_DATA_DIR/config.toml"
+EXAMPLE_CONFIG="$REPO_DIR/example.config.toml"
+
+if [ -f "$USER_CONFIG" ]; then
+    ok "config.toml already exists at $USER_CONFIG — leaving untouched"
+elif [ -f "$EXAMPLE_CONFIG" ]; then
+    cp "$EXAMPLE_CONFIG" "$USER_CONFIG"
+    ok "Created config.toml at $USER_CONFIG"
+    info "Edit $USER_CONFIG to set your journal folder and Discord webhook before running."
 else
-    ok "config.toml already exists — leaving untouched"
+    warn "example.config.toml not found — config.toml was not created."
+    warn "Copy example.config.toml to $USER_CONFIG manually before running EDMD."
 fi
 
 # ── Executable bit ────────────────────────────────────────────────────────────
@@ -183,6 +197,6 @@ fi
 echo -e "  ${WHT}With a config profile:${NC}"
 echo -e "    ./edmd.py -p YourProfileName"
 echo
-echo -e "  ${CYN}Edit config.toml to set your journal folder path before running.${NC}"
+echo -e "  ${CYN}Edit $XDG_DATA/EDMD/config.toml to set your journal folder path before running.${NC}"
 echo -e "  ${CYN}See INSTALL.md and README.md for full documentation.${NC}"
 echo

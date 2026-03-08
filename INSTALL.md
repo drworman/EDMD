@@ -32,8 +32,8 @@ pip install discord-webhook cryptography --break-system-packages
 ```bash
 git clone https://github.com/drworman/EDMD.git
 cd EDMD
-cp example.config.toml config.toml
-nano config.toml        # set JournalFolder at minimum
+bash install.sh         # creates ~/.local/share/EDMD/config.toml from example
+nano ~/.local/share/EDMD/config.toml   # set JournalFolder at minimum
 ./edmd.py
 ./edmd.py --gui         # GTK4 interface
 ```
@@ -52,8 +52,8 @@ pip install discord-webhook cryptography --break-system-packages
 ```bash
 git clone https://github.com/drworman/EDMD.git
 cd EDMD
-cp example.config.toml config.toml
-nano config.toml
+bash install.sh
+nano ~/.local/share/EDMD/config.toml
 ./edmd.py --gui
 ```
 
@@ -81,6 +81,23 @@ install.bat
 ```
 
 EDMD runs in terminal mode on Windows. GTK4 GUI is Linux-only.
+
+---
+
+## Config file location
+
+`install.sh` creates `config.toml` in the EDMD user data directory automatically.
+If you need to locate or create it manually:
+
+| Platform | Path |
+|----------|------|
+| Linux | `~/.local/share/EDMD/config.toml` |
+| Windows | `%APPDATA%\EDMD\config.toml` |
+| macOS | `~/Library/Application Support/EDMD/config.toml` |
+
+On Linux, `~/.config/EDMD` is a symlink to `~/.local/share/EDMD/` — you can use
+either path. A repo-adjacent `config.toml` is also accepted as a fallback for
+development or portable installs.
 
 ---
 

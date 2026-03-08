@@ -32,9 +32,31 @@ edmd.py --upgrade
 
 ---
 
+### User Data Directory and Config Migration
+
+EDMD now creates and uses a platform-appropriate user data directory for all runtime files, including `config.toml`.
+
+| Platform | Path |
+|----------|------|
+| Linux | `~/.local/share/EDMD/` |
+| Windows | `%APPDATA%\EDMD\` |
+| macOS | `~/Library/Application Support/EDMD/` |
+
+On Linux, a symlink is created at `~/.config/EDMD` → `~/.local/share/EDMD/` for XDG hygiene. Either path works.
+
+**Config resolution order:**
+1. User data directory (`~/.local/share/EDMD/config.toml`) — primary
+2. Repo-adjacent (`<install dir>/config.toml`) — fallback for portable or development installs
+
+`install.sh` now creates `config.toml` in the user data directory automatically. The "config not found" error message shows both expected paths explicitly.
+
+**Existing installs:** move `config.toml` from the repo directory to `~/.local/share/EDMD/config.toml` and EDMD will find it there on next launch. The repo-adjacent path continues to work as a fallback indefinitely.
+
+---
+
 ### Session State Persistence
 
-EDMD now preserves active session counters across upgrade restarts (and any clean exit/relaunch).
+EDMD now preserves active session counters across upgrade restarts and clean exits.
 
 A lightweight JSON snapshot is written to the user data directory before `os.execv` fires and on `Ctrl+C` exit. On next startup, if the snapshot references the same journal file that is currently active, session counters are restored before monitoring begins.
 
@@ -51,23 +73,9 @@ A lightweight JSON snapshot is written to the user data directory before `os.exe
 - Alert timers (reset on restart — brief gap is acceptable)
 - Periodic summary timer (reset to prevent an immediate summary on relaunch)
 
-The snapshot is keyed to the active journal filename. If the journal has rolled over between exit and restart, the snapshot is discarded rather than applied — stale state from a prior session is never restored.
+The snapshot is keyed to the active journal filename. If the journal has rolled over between exit and restart, the snapshot is discarded — stale state from a prior session is never restored.
 
-State file location:
-
-| Platform | Path |
-|----------|------|
-| Linux | `~/.local/share/EDMD/session_state.json` |
-| Windows | `%APPDATA%\EDMD\session_state.json` |
-| macOS | `~/Library/Application Support/EDMD/session_state.json` |
-
-On Linux, a symlink is also created at `~/.config/EDMD` → `~/.local/share/EDMD` for XDG hygiene.
-
----
-
-### User Data Directory
-
-EDMD now creates and uses a platform-appropriate user data directory for runtime files. This is the foundation for future config migration — `config.toml` remains repo-adjacent in this release.
+State file: `<user data dir>/session_state.json`
 
 ---
 
@@ -75,7 +83,7 @@ EDMD now creates and uses a platform-appropriate user data directory for runtime
 
 **Symptom:** The NPC crew block disappeared from the GUI after logging out to the main menu and back in, even when crew was still hired.
 
-**Root cause:** `LoadGame` correctly sets `crew_active = False` pending re-confirmation. `CrewAssign` re-fires on relog only when the player interacts with crew during that session — it does not always fire automatically. `bootstrap_crew()` runs only once at initial preload and was not called again on relog.
+**Root cause:** `LoadGame` correctly sets `crew_active = False` pending re-confirmation. `CrewAssign` re-fires on relog only when the player explicitly interacts with crew during that session — it does not always fire automatically. `bootstrap_crew()` runs only once at initial preload and was not called again on relog.
 
 **Fix:** In the `Loadout` handler, after `has_fighter_bay` is resolved: if a fighter bay is present, `crew_name` is known, and `crew_active` is still `False`, `crew_active` is set to `True` immediately. The existing `crew_update` queue push then redraws the panel. No bootstrap re-run required.
 
@@ -97,7 +105,7 @@ Seven theme-matched avatar variants have been added to `images/`:
 
 All variants share the same Concept D geometry (concentric rings, hexagon, central lens/iris, cardinal ticks with 45° sub-ticks, crosshair lines). Accent colour matches the active theme.
 
-**GUI:** The sidebar avatar resolves the correct variant at startup from the active theme name. Falls back to the default orange variant for unknown theme names (including custom themes).
+**GUI:** The sidebar avatar resolves the correct variant at startup from the active theme name. Falls back to the default orange variant for unknown or custom theme names.
 
 **Discord webhook:** `AVATAR_URL` updated to point to `edmd_avatar_512.png` in the repo.
 
@@ -122,7 +130,7 @@ New `.upgrade-btn` class added to `themes/base.css`. Uses `--accent` background 
 **Added:** `--upgrade` — documented above.
 
 **Documented (previously undocumented):**
-- `--test` / `-t` — re-routes Discord output to terminal instead of sending to webhook. Useful for testing notification formatting without sending live messages.
+- `--test` / `-t` — re-routes Discord output to terminal instead of sending to webhook. Useful for verifying notification formatting without sending live messages.
 - `--trace` / `-d` — prints verbose debug and trace output to terminal.
 
 README Command Line Arguments section updated accordingly.
@@ -137,7 +145,7 @@ Three new guides added to `docs/guides/`:
 
 **`DUAL_PILOT.md`** — Running two accounts simultaneously on a single machine with independent Proton prefixes, journal directories, EDMC profiles, and EDMD profiles.
 
-**`REMOTE_ACCESS.md`** — (moved from `docs/`) Running the EDMD GUI on a secondary machine (e.g. laptop) as a thin-client front-end against the game machine's live session. Covers SSH key setup, optional DuckDNS WAN access, the `[REMOTE]` config profile, and the `edmd_launch.sh` context-aware launcher script.
+**`REMOTE_ACCESS.md`** — Running the EDMD GUI on a secondary machine (e.g. laptop) as a thin-client front-end against the game machine's live session. Covers SSH key setup, optional DuckDNS WAN access, the `[REMOTE]` config profile, and the `edmd_launch.sh` context-aware launcher script.
 
 `docs/` restructured:
 ```
@@ -172,4 +180,3 @@ README updated with a `## Guides` section linking all three.
 - SLF shield state is not tracked — the game does not expose this via journal or `Status.json`
 - GTK4 GUI is Linux-only; Windows users have terminal and Discord output
 - Theme changes require a restart (no hot-reload for CSS)
-- `config.toml` remains repo-adjacent in this release; migration to the user data directory is planned for a future release

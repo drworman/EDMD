@@ -252,10 +252,20 @@ print(f"{'=' * len(title)}{Terminal.END}\n")
 
 
 # Load config file
-if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-    configfile = Path(__file__).parents[1] / "config.toml"
+# Resolution order:
+#   1. User data directory (~/.local/share/EDMD/config.toml on Linux, etc.)
+#   2. Repo-adjacent (Path(__file__).parent / "config.toml") — legacy / dev fallback
+#   3. PyInstaller bundle path
+_config_user    = EDMD_DATA_DIR / "config.toml"
+_config_repodir = Path(__file__).parent / "config.toml"
+_config_frozen  = Path(__file__).parents[1] / "config.toml"
+
+if _config_user.is_file():
+    configfile = _config_user
+elif getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    configfile = _config_frozen
 else:
-    configfile = Path(__file__).parent / "config.toml"
+    configfile = _config_repodir
 
 if configfile.is_file():
     with open(configfile, mode="rb") as f:
@@ -264,7 +274,14 @@ if configfile.is_file():
         except tomllib.TOMLDecodeError as e:
             abort(f"Config decode error: {e}")
 else:
-    abort("Config file not found: copy and rename example.config.toml to config.toml\n")
+    _cfg_data = EDMD_DATA_DIR / "config.toml"
+    _cfg_repo = Path(__file__).parent / "config.toml"
+    abort(
+        f"Config file not found.\n"
+        f"  Expected (primary):  {_cfg_data}\n"
+        f"  Or (repo-adjacent):  {_cfg_repo}\n"
+        f"  Copy example.config.toml to either location to get started.\n"
+    )
 
 config_mtime = configfile.stat().st_mtime
 _hs=[20,16,35,6,0,60,4,41,55,93,89,41,60,44,84,2,1,87,9,11,29,64,26,15,6,12,59,60,86,54,32,60,12,36,33,51,39,40,26,34,11,49,40,89]

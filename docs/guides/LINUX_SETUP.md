@@ -210,7 +210,8 @@ Follow the [installation instructions](../../INSTALL.md) in the repo root, then
 configure EDMD for your pilot profile — see `example.config.toml` for a
 complete reference.
 
-At minimum, set your journal directory and Discord webhook in `config.toml`:
+EDMD's `config.toml` lives in `~/.local/share/EDMD/config.toml` (created by
+`install.sh`). At minimum, set your journal directory and Discord webhook:
 
 ```toml
 [EDP1]

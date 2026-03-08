@@ -170,8 +170,8 @@ authenticated run.
 
 ## Step 6 — EDMD profiles
 
-EDMD's profile system is built for exactly this. In `config.toml`, add a
-section per pilot:
+EDMD's profile system is built for exactly this. In `~/.local/share/EDMD/config.toml`,
+add a section per pilot:
 
 ```toml
 [EDP1]
