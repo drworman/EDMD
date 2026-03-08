@@ -4,7 +4,7 @@ edmd_gui.py -- GTK4 graphical interface for Elite Dangerous Monitor Daemon
 Layout:
   Left: Event Log (scrolling, live)
   Right panels (top to bottom):
-    Commander | Crew | Current Vessel | SLF | Mission Stack | Session Stats
+    Commander | Crew | Mission Stack | Session Stats
 
 Architecture:
   - Monitor runs on a background thread (see edmd.py)
@@ -325,58 +325,107 @@ class EdmdWindow(Gtk.ApplicationWindow):
         root.append(panel_scroll)
 
         self._build_cmdr_panel(panel)
-        self._build_vessel_panel(panel)
         self._build_crew_panel(panel)
-        self._build_slf_panel(panel)
         self._build_mission_panel(panel)
         self._build_stats_panel(panel)
         self._build_sponsor_panel(panel)
 
     def _build_cmdr_panel(self, parent):
-        # Dynamic header: "CMDR <name>"
+        """Commander block — two-line header, reordered rows, shields at bottom."""
+        # ── Two-line header ────────────────────────────────────────────────
+        hdr_outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
+
+        # Line 1: CMDR name left, ship type right
+        hdr_line1 = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         self._cmdr_header_lbl = Gtk.Label(label="Commander")
         self._cmdr_header_lbl.set_xalign(0.0)
-        section, body = make_section("", title_widget=self._cmdr_header_lbl)
+        self._cmdr_header_lbl.set_hexpand(True)
+        hdr_line1.append(self._cmdr_header_lbl)
+        self._cmdr_ship_type_hdr = Gtk.Label(label="")
+        self._cmdr_ship_type_hdr.set_xalign(1.0)
+        hdr_line1.append(self._cmdr_ship_type_hdr)
+        hdr_outer.append(hdr_line1)
+
+        # Line 2: ship name | ident, right-aligned (hidden when neither is set)
+        self._cmdr_ship_ident_hdr = Gtk.Label(label="")
+        self._cmdr_ship_ident_hdr.set_xalign(1.0)
+        self._cmdr_ship_ident_hdr.set_visible(False)
+        hdr_outer.append(self._cmdr_ship_ident_hdr)
+
+        section, body = make_section("", title_widget=hdr_outer)
         self._cmdr_section = section
         parent.append(section)
 
+        # ── Data rows: mode → rank → location → power → health ────────────
         for lbl_text, attr in [
             ("Mode",        "_cmdr_mode"),
             ("Combat Rank", "_cmdr_rank"),
+            ("System",      "_cmdr_system"),
+            ("Body",        "_cmdr_location"),
             ("Power",       "_cmdr_pp"),
             ("PP Rank",     "_cmdr_pprank"),
-            ("System",      "_cmdr_system"),
-            ("Location",    "_cmdr_location"),
         ]:
             row, val = make_row(lbl_text)
             setattr(self, attr, val)
             body.append(row)
 
-        # PP rank progress bar
+        # PP progress bar (immediately below PP Rank)
         self._pp_rank_bar = Gtk.ProgressBar()
         self._pp_rank_bar.set_fraction(0.0)
         self._pp_rank_bar.add_css_class("pp-rank-bar")
         self._pp_rank_bar.set_show_text(False)
-
         bar_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         bar_box.add_css_class("pp-rank-bar-row")
         bar_box.append(self._pp_rank_bar)
         self._pp_rank_bar.set_hexpand(True)
         body.append(bar_box)
 
+        # Shields | Hull — always last; highest urgency during combat
+        row_sh = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        row_sh.add_css_class("data-row")
+        key_sh = make_label("Shields | Hull", css_class="data-key")
+        key_sh.set_hexpand(False)
+        row_sh.append(key_sh)
+        self._cmdr_health = make_label("— | —", css_class="data-value")
+        self._cmdr_health.set_hexpand(True)
+        self._cmdr_health.set_xalign(1.0)
+        row_sh.append(self._cmdr_health)
+        body.append(row_sh)
     def _build_crew_panel(self, parent):
-        """NPC Crew block — hidden when no active crew."""
-        self._crew_header_lbl = Gtk.Label(label="NPC Crew")
+        """CREW block — absorbs SLF status. Hidden when no active crew.
+
+        Header:  CREW: <name>              <SLF type>  (right; hidden when no bay)
+        ──────────────────────────────────────────────────────
+        Rank       Competent
+        Hired      14 Mar 2025
+        Active     312 days
+        Paid       ≥ 48.3M Cr
+        SLF        SLF Docked / Hull 72% / Destroyed / All Spent
+
+        When CMDR is in the SLF, crew flies the mothership:
+          Header reads:  CREW: <name>  [Flying <ship type>]
+          SLF row shows: CMDR Aboard | Hull <n>%
+        """
+        # Header: crew name left, SLF type right
+        hdr_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        self._crew_header_lbl = Gtk.Label(label="CREW")
         self._crew_header_lbl.set_xalign(0.0)
-        section, body = make_section("", title_widget=self._crew_header_lbl)
+        self._crew_header_lbl.set_hexpand(True)
+        hdr_box.append(self._crew_header_lbl)
+        self._crew_slf_type_hdr = Gtk.Label(label="")
+        self._crew_slf_type_hdr.set_xalign(1.0)
+        hdr_box.append(self._crew_slf_type_hdr)
+
+        section, body = make_section("", title_widget=hdr_box)
         self._crew_section = section
         parent.append(section)
 
         for lbl_text, attr in [
-            ("Rank",         "_crew_rank_lbl"),
-            ("Hire Date",    "_crew_hired_lbl"),
-            ("Active",       "_crew_active_lbl"),
-            ("Total Paid",   "_crew_paid_lbl"),
+            ("Rank",   "_crew_rank_lbl"),
+            ("Hired",  "_crew_hired_lbl"),
+            ("Active", "_crew_active_lbl"),
+            ("Paid",   "_crew_paid_lbl"),
+            ("SLF",    "_crew_slf_status"),
         ]:
             row, val = make_row(lbl_text)
             setattr(self, attr, val)
@@ -384,78 +433,6 @@ class EdmdWindow(Gtk.ApplicationWindow):
 
         # Hidden by default until crew is active
         section.set_visible(False)
-
-    def _build_vessel_panel(self, parent):
-        """Current Vessel block — header: "Ship Name | Ship ID  Type", rows: Pilot + combined Shields/Hull."""
-        # Header: two labels in an HBox — left name/ident, right ship type
-        hdr_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        self._vessel_header_lbl = Gtk.Label(label="Current Vessel")
-        self._vessel_header_lbl.set_xalign(0.0)
-        self._vessel_header_lbl.set_hexpand(True)
-        hdr_box.append(self._vessel_header_lbl)
-        self._vessel_type_hdr = Gtk.Label(label="")
-        self._vessel_type_hdr.set_xalign(1.0)
-        # No extra class — inherits section-header from parent hdr_box so it matches
-        hdr_box.append(self._vessel_type_hdr)
-
-        section, body = make_section("", title_widget=hdr_box)
-        self._vessel_section = section
-        parent.append(section)
-
-        # Pilot row
-        row, self._vessel_pilot = make_row("Pilot")
-        body.append(row)
-
-        # Combined Shields | Hull row
-        row_sh = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row_sh.add_css_class("data-row")
-        key_sh = make_label("Shields | Hull", css_class="data-key")
-        key_sh.set_hexpand(False)
-        row_sh.append(key_sh)
-        self._vessel_health = make_label("— | —", css_class="data-value")
-        self._vessel_health.set_hexpand(True)
-        self._vessel_health.set_xalign(1.0)
-        row_sh.append(self._vessel_health)
-        body.append(row_sh)
-
-    def _build_slf_panel(self, parent):
-        """SLF block — hidden when no SLF module fitted. Type in header, combined health row."""
-        # Header: "Ship-Launched Fighter" left, type right
-        hdr_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        hdr_lbl = Gtk.Label(label="Ship-Launched Fighter")
-        hdr_lbl.set_xalign(0.0)
-        hdr_lbl.set_hexpand(True)
-        hdr_box.append(hdr_lbl)
-        self._slf_type_hdr = Gtk.Label(label="")
-        self._slf_type_hdr.set_xalign(1.0)
-        # No extra class — inherits section-header styling from parent hdr_box
-        hdr_box.append(self._slf_type_hdr)
-
-        section, body = make_section("", title_widget=hdr_box)
-        self._slf_section = section
-        parent.append(section)
-
-        row, self._slf_pilot = make_row("Pilot")
-        body.append(row)
-
-        row, self._slf_status = make_row("Status")
-        body.append(row)
-
-        # Hull row
-        row_sh = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row_sh.add_css_class("data-row")
-        key_sh = make_label("Hull", css_class="data-key")
-        key_sh.set_hexpand(False)
-        row_sh.append(key_sh)
-        self._slf_health = make_label("—", css_class="data-value")
-        self._slf_health.set_hexpand(True)
-        self._slf_health.set_xalign(1.0)
-        row_sh.append(self._slf_health)
-        body.append(row_sh)
-
-        # Hidden unless SLF module is fitted
-        section.set_visible(False)
-
     def _build_mission_panel(self, parent):
         section, body = make_section("Mission Stack")
         parent.append(section)
@@ -541,8 +518,8 @@ class EdmdWindow(Gtk.ApplicationWindow):
             avatar_pic.set_size_request(72, 72)
             avatar_pic.set_opacity(0.55)
             avatar_pic.set_halign(Gtk.Align.CENTER)
-            avatar_pic.set_margin_top(8)
-            avatar_pic.set_margin_bottom(4)
+            avatar_pic.set_margin_top(4)
+            avatar_pic.set_margin_bottom(2)
             parent.append(avatar_pic)
 
         # Outer box: vexpand so it pushes to the bottom of the panel
@@ -550,19 +527,6 @@ class EdmdWindow(Gtk.ApplicationWindow):
         section.set_vexpand(True)
         section.set_valign(Gtk.Align.END)
         parent.append(section)
-
-        # Wrapped note
-        note = Gtk.Label()
-        note.set_markup(
-            "EDMD is a hobby project built outside of work hours. "
-            "Every donation is genuinely appreciated — it keeps the "
-            "coffee flowing and the commits coming. Thank you. o7"
-        )
-        note.set_xalign(0.0)
-        note.set_wrap(True)
-        note.set_wrap_mode(2)  # Pango.WrapMode.WORD_CHAR
-        note.add_css_class("sponsor-note")
-        body.append(note)
 
         # Single-line links separated by " | "
         link_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
@@ -591,22 +555,59 @@ class EdmdWindow(Gtk.ApplicationWindow):
 
     def _refresh_cmdr(self):
         s = self.state
-        # Dynamic header: "CMDR <name>" or "Commander" if unknown
+
+        # ── Header line 1: CMDR name (left) + ship type (right) ───────────
         if s.pilot_name:
-            self._cmdr_header_lbl.set_label(f"CMDR {s.pilot_name}")
+            if s.cmdr_in_slf:
+                self._cmdr_header_lbl.set_label(f"CMDR {s.pilot_name}  [In Fighter]")
+            else:
+                self._cmdr_header_lbl.set_label(f"CMDR {s.pilot_name}")
         else:
             self._cmdr_header_lbl.set_label("Commander")
+        self._cmdr_ship_type_hdr.set_label(s.pilot_ship or "")
 
+        # ── Header line 2: ship name | ident (right-aligned) ──────────────
+        parts = [p for p in [s.ship_name, s.ship_ident] if p]
+        if parts:
+            self._cmdr_ship_ident_hdr.set_label(" | ".join(parts))
+            self._cmdr_ship_ident_hdr.set_visible(True)
+        else:
+            self._cmdr_ship_ident_hdr.set_visible(False)
+
+        # ── Mode ───────────────────────────────────────────────────────────
         self._cmdr_mode.set_label(s.pilot_mode or "—")
+
+        # ── Combat Rank ────────────────────────────────────────────────────
         rank = s.pilot_rank or "—"
         prog = f" +{s.pilot_rank_progress}%" if s.pilot_rank_progress is not None else ""
         self._cmdr_rank.set_label(f"{rank}{prog}")
-        self._cmdr_pp.set_label(s.pp_power or "—")
 
-        # PP rank label + progress bar
+        # ── System (hidden in supercruise with no system) ──────────────────
+        if s.pilot_system:
+            self._cmdr_system.set_label(s.pilot_system)
+            self._cmdr_system.get_parent().set_visible(True)
+        else:
+            self._cmdr_system.set_label("—")
+            self._cmdr_system.get_parent().set_visible(False)
+
+        # ── Body (hidden when not near a body) ─────────────────────────────
+        if s.pilot_body:
+            body_str = s.pilot_body
+            if s.pilot_system and body_str.startswith(s.pilot_system):
+                body_str = body_str[len(s.pilot_system):].lstrip()
+            self._cmdr_location.set_label(body_str or "—")
+            self._cmdr_location.get_parent().set_visible(True)
+        else:
+            self._cmdr_location.set_label("—")
+            self._cmdr_location.get_parent().set_visible(False)
+
+        # ── Power + PP Rank + bar (all hidden when not pledged) ───────────
+        has_power = bool(s.pp_power)
+        self._cmdr_pp.get_parent().set_visible(has_power)
+        self._cmdr_pprank.get_parent().set_visible(has_power)
+        self._cmdr_pp.set_label(s.pp_power or "—")
         if s.pp_rank:
             merits = s.pp_merits_total
-
             if merits is not None:
                 fraction, earned, span, next_rank = pp_rank_progress(s.pp_rank, merits)
                 pct = int(fraction * 100)
@@ -619,7 +620,6 @@ class EdmdWindow(Gtk.ApplicationWindow):
                 pp_rank_label = f"Rank {s.pp_rank}"
                 fraction = 0.0
                 tooltip = "Earn merits to populate progress"
-
             self._cmdr_pprank.set_label(pp_rank_label)
             self._pp_rank_bar.set_fraction(fraction)
             self._pp_rank_bar.set_tooltip_text(tooltip)
@@ -629,146 +629,111 @@ class EdmdWindow(Gtk.ApplicationWindow):
             self._pp_rank_bar.set_fraction(0.0)
             self._pp_rank_bar.set_visible(False)
 
-        # System and Location rows
-        if s.pilot_system:
-            self._cmdr_system.set_label(s.pilot_system)
-            self._cmdr_system.get_parent().set_visible(True)
+        # ── Shields | Hull (always shown) ─────────────────────────────────
+        shield_str = _fmt_shield(s.ship_shields, s.ship_shields_recharging)
+        hull_str = f"{s.ship_hull}%" if s.ship_hull is not None else "—"
+        self._cmdr_health.set_label(f"{shield_str}  |  {hull_str}")
+        for cls in ("health-good", "health-warn", "health-crit"):
+            self._cmdr_health.remove_css_class(cls)
+        if not s.ship_shields:
+            self._cmdr_health.add_css_class("health-crit")
+        elif s.ship_shields_recharging:
+            self._cmdr_health.add_css_class("health-warn")
         else:
-            self._cmdr_system.set_label("—")
-            self._cmdr_system.get_parent().set_visible(False)
-
-        if s.pilot_body:
-            # Strip system name prefix if system is visible alongside it
-            body = s.pilot_body
-            if s.pilot_system and body.startswith(s.pilot_system):
-                body = body[len(s.pilot_system):].lstrip()
-            self._cmdr_location.set_label(body or "—")
-            self._cmdr_location.get_parent().set_visible(True)
-        else:
-            self._cmdr_location.set_label("—")
-            self._cmdr_location.get_parent().set_visible(False)
-
+            hull_css = _hull_css(s.ship_hull) if s.ship_hull is not None else "health-good"
+            self._cmdr_health.add_css_class(hull_css)
     def _refresh_crew(self):
         s = self.state
-        # Only show when crew is confirmed on active duty this session
         has_crew = bool(s.crew_name) and s.crew_active
         self._crew_section.set_visible(has_crew)
         if not has_crew:
             return
 
-        # Header: crew name
-        self._crew_header_lbl.set_label(f"NPC Crew: {s.crew_name}")
+        # ── Header: crew name (left) + SLF type (right) ───────────────────
+        # When CMDR is in the SLF, crew flies the mothership — note that.
+        if s.cmdr_in_slf:
+            self._crew_header_lbl.set_label(
+                f"CREW: {s.crew_name or 'NPC'}  [Flying {s.pilot_ship or 'Ship'}]"
+            )
+        else:
+            self._crew_header_lbl.set_label(f"CREW: {s.crew_name or 'NPC'}")
+        self._crew_slf_type_hdr.set_label(s.slf_type or "")
 
-        # Rank
-        rank_str = RANK_NAMES[s.crew_rank] if s.crew_rank is not None and 0 <= s.crew_rank < len(RANK_NAMES) else "—"
+        # ── Rank ───────────────────────────────────────────────────────────
+        rank_str = (
+            RANK_NAMES[s.crew_rank]
+            if s.crew_rank is not None and 0 <= s.crew_rank < len(RANK_NAMES)
+            else "—"
+        )
         self._crew_rank_lbl.set_label(rank_str)
 
-        # Hire date: DD MMM YYYY (no time)
-        if s.crew_hire_time:
-            self._crew_hired_lbl.set_label(s.crew_hire_time.strftime("%d %b %Y"))
-        else:
-            self._crew_hired_lbl.set_label("Unknown")
+        # ── Hired ─────────────────────────────────────────────────────────
+        self._crew_hired_lbl.set_label(
+            s.crew_hire_time.strftime("%d %b %Y") if s.crew_hire_time else "Unknown"
+        )
 
-        # Active duration: human-readable to nearest complete day
-        now = datetime.now(timezone.utc)
-        ref = s.crew_hire_time
-        if ref:
-            self._crew_active_lbl.set_label(_fmt_crew_active(now - ref))
+        # ── Active duration ────────────────────────────────────────────────
+        if s.crew_hire_time:
+            self._crew_active_lbl.set_label(
+                _fmt_crew_active(datetime.now(timezone.utc) - s.crew_hire_time)
+            )
         else:
             self._crew_active_lbl.set_label("—")
 
-        # Total earned — annotate with ≥ if journal history doesn't cover full tenure
+        # ── Total paid ────────────────────────────────────────────────────
         if s.crew_total_paid is not None and s.crew_total_paid > 0:
             prefix = "" if s.crew_paid_complete else "≥ "
             self._crew_paid_lbl.set_label(f"{prefix}{self.fmt_credits(s.crew_total_paid)}")
         else:
             self._crew_paid_lbl.set_label("—")
 
-    def _refresh_vessel(self):
-        s = self.state
-        # Header left: "Ship Name | Ship ID" or "Current Vessel"
-        parts = [p for p in [s.ship_name, s.ship_ident] if p]
-        if parts:
-            self._vessel_header_lbl.set_label(" | ".join(parts))
-        else:
-            self._vessel_header_lbl.set_label("Current Vessel")
-        # Header right: ship type
-        self._vessel_type_hdr.set_label(s.pilot_ship or "")
-
-        # Pilot row: CMDR name normally; when CMDR is in SLF the crew member
-        # takes the helm — show their name, falling back to "NPC" if unknown.
-        if s.cmdr_in_slf:
-            self._vessel_pilot.set_label(s.crew_name or "NPC")
-        else:
-            self._vessel_pilot.set_label(s.pilot_name or "—")
-
-        # Combined Shields | Hull
-        shield_str = _fmt_shield(s.ship_shields, s.ship_shields_recharging)
-        hull_str = f"{s.ship_hull}%" if s.ship_hull is not None else "—"
-        combined = f"{shield_str}  |  {hull_str}"
-        self._vessel_health.set_label(combined)
-        # Colour the whole label by worst health indicator
-        for cls in ("health-good", "health-warn", "health-crit"):
-            self._vessel_health.remove_css_class(cls)
-        if not s.ship_shields:
-            self._vessel_health.add_css_class("health-crit")
-        elif s.ship_shields_recharging:
-            self._vessel_health.add_css_class("health-warn")
-        else:
-            hull_css = _hull_css(s.ship_hull) if s.ship_hull is not None else "health-good"
-            self._vessel_health.add_css_class(hull_css)
-
-    def _refresh_slf(self):
-        s = self.state
-        # Show SLF panel only if SLF module fitted (slf_type is not None)
-        # or if a fighter is currently deployed/was destroyed this session
-        # Show panel only when a fighter bay is fitted (slf_type known)
-        # or a fighter is actively deployed. The old hull heuristic caused
-        # false positives after switching to a ship with no fighter bay.
-        has_slf = (s.slf_type is not None) or s.slf_deployed
-        self._slf_section.set_visible(has_slf)
-        if not has_slf:
+        # ── SLF status (hidden when no bay fitted) ─────────────────────────
+        has_bay = s.has_fighter_bay
+        self._crew_slf_status.get_parent().set_visible(has_bay)
+        if not has_bay:
             return
 
-        # Header right: fighter type
-        self._slf_type_hdr.set_label(s.slf_type or s.slf_loadout or "")
-
-        # Pilot row — use crew name if known, fall back to "NPC"
-        if s.cmdr_in_slf:
-            self._slf_pilot.set_label("CMDR (you)")
-            self._slf_pilot.add_css_class("slf-deployed")
-        else:
-            self._slf_pilot.set_label(s.crew_name or "NPC")
-            self._slf_pilot.remove_css_class("slf-deployed")
-
-        # Status row: Docked / Deployed / Destroyed
-        for cls in ("health-good", "health-warn", "health-crit", "slf-deployed"):
-            self._slf_status.remove_css_class(cls)
-        if s.slf_docked:
-            self._slf_status.set_label("Docked")
-            self._slf_status.add_css_class("health-good")
-        elif s.slf_deployed:
-            self._slf_status.set_label("Deployed")
-            self._slf_status.add_css_class("slf-deployed")
-        else:
-            self._slf_status.set_label("Destroyed")
-            self._slf_status.add_css_class("health-crit")
-
-        # Hull — blank when docked (repaired to full, not informative)
         for cls in ("health-good", "health-warn", "health-crit"):
-            self._slf_health.remove_css_class(cls)
-        if s.slf_docked:
-            self._slf_health.set_label("—")
-            self._slf_health.add_css_class("health-good")
-        elif s.slf_deployed or s.slf_hull > 0:
-            self._slf_health.set_label(f"{s.slf_hull}%")
-            self._slf_health.add_css_class(_hull_css(s.slf_hull))
+            self._crew_slf_status.remove_css_class(cls)
+
+        all_spent = (
+            s.slf_stock_total > 0
+            and s.slf_destroyed_count >= s.slf_stock_total
+            and not s.slf_docked
+            and not s.slf_deployed
+        )
+
+        if s.cmdr_in_slf:
+            # CMDR is in the SLF; show hull from CMDR's perspective
+            hull_str = f"{s.slf_hull}%" if s.slf_hull is not None else "—"
+            self._crew_slf_status.set_label(f"CMDR Aboard  |  Hull {hull_str}")
+            self._crew_slf_status.add_css_class(
+                _hull_css(s.slf_hull) if s.slf_hull is not None else "health-good"
+            )
+        elif s.slf_docked:
+            self._crew_slf_status.set_label("SLF Docked")
+            self._crew_slf_status.add_css_class("health-good")
+        elif s.slf_deployed:
+            hull_str = f"Hull {s.slf_hull}%" if s.slf_hull is not None else "Hull —"
+            self._crew_slf_status.set_label(hull_str)
+            self._crew_slf_status.add_css_class(
+                _hull_css(s.slf_hull) if s.slf_hull is not None else "health-good"
+            )
+        elif all_spent:
+            self._crew_slf_status.set_label("All Spent")
+            self._crew_slf_status.add_css_class("health-crit")
         else:
-            self._slf_health.set_label("Destroyed")
-            self._slf_health.add_css_class("health-crit")
+            # Destroyed, rebuilding not yet complete
+            self._crew_slf_status.set_label("Destroyed")
+            self._crew_slf_status.add_css_class("health-crit")
+    def _refresh_vessel(self):
+        """Vessel and SLF state now live in CMDR and CREW blocks respectively."""
+        self._refresh_cmdr()
+        self._refresh_crew()
 
-
-
+    def _refresh_slf(self):
+        """SLF state now lives in CREW block."""
+        self._refresh_crew()
     def _refresh_missions(self):
         s = self.state
         if s.stack_value > 0:
@@ -870,8 +835,6 @@ class EdmdWindow(Gtk.ApplicationWindow):
     def _refresh_all_panels(self):
         self._refresh_cmdr()
         self._refresh_crew()
-        self._refresh_vessel()
-        self._refresh_slf()
         self._refresh_missions()
         self._refresh_stats()
 
@@ -967,7 +930,7 @@ class EdmdWindow(Gtk.ApplicationWindow):
             # Append an Upgrade button after the existing link row
             upgrade_btn = Gtk.Button(label=f"⬆  Upgrade to v{version}")
             upgrade_btn.add_css_class("upgrade-btn")
-            upgrade_btn.set_margin_top(6)
+            upgrade_btn.set_margin_top(4)
             upgrade_btn.set_tooltip_text(
                 "Pull latest version from GitHub and restart EDMD automatically"
             )

@@ -231,8 +231,16 @@ def _check_for_update():
             if response.status == 200:
                 data = json.loads(response.read())
                 tag = data.get("tag_name", "").lstrip("v").strip()
+                # Compare as YYYYMMDD integers (with optional trailing letter a/b/c).
+                # Only flag an upgrade if the remote tag is strictly newer.
                 if tag and tag != VERSION:
-                    _update_notice = tag
+                    def _ver_key(v):
+                        # "20260308b" -> (20260308, "b")  "20260308" -> (20260308, "")
+                        import re as _re
+                        m = _re.match(r"^(\d+)([a-z]*)$", v)
+                        return (int(m.group(1)), m.group(2)) if m else (0, "")
+                    if _ver_key(tag) > _ver_key(VERSION):
+                        _update_notice = tag
     except Exception:
         pass
 
@@ -720,6 +728,12 @@ class MonitorState:
 
         # SLF type extracted from Loadout modules
         self.slf_type = None
+
+        # SLF stock tracking (for "All Spent" detection)
+        # slf_stock_total: fighter capacity of the bay (from Loadout module size)
+        # slf_destroyed_count: fighters destroyed since last restock/rebuild
+        self.slf_stock_total = 0
+        self.slf_destroyed_count = 0
 
     def sessionstart(self, reset=False):
         if not self.session_start_time or reset:
@@ -1489,6 +1503,7 @@ def handle_event(line):
                 state.slf_docked = False
                 state.slf_hull = 0
                 state.slf_orders = None
+                state.slf_destroyed_count += 1
                 if gui_mode:
                     gui_queue.put(("slf_update", None))
 
@@ -1530,6 +1545,10 @@ def handle_event(line):
                     state.slf_type = FIGHTER_TYPE_NAMES[fighter_type]
                 elif fighter_type:
                     state.slf_type = fighter_type.replace("_", " ").title()
+                # Restocking resets destroyed count and returns to docked
+                state.slf_destroyed_count = 0
+                state.slf_docked = True
+                state.slf_deployed = False
                 if gui_mode:
                     gui_queue.put(("slf_update", None))
 
@@ -1543,6 +1562,9 @@ def handle_event(line):
 
             case "FighterRebuilt":
                 state.slf_hull = 100
+                state.slf_docked = True
+                state.slf_deployed = False
+                state.slf_destroyed_count = max(0, state.slf_destroyed_count - 1)
                 if gui_mode:
                     gui_queue.put(("slf_update", None))
 
@@ -1694,14 +1716,23 @@ def handle_event(line):
                     gui_queue.put(("vessel_update", None))
 
                 # Detect whether a fighter bay is fitted.
-                # The bay module item is "int_fighterbay_*" — there is no "Hanger" slot name.
-                # The fighter CRAFT type is not in Loadout; it comes from LaunchFighter/RestockVehicle.
-                # Here we just detect presence/absence to show or hide the SLF panel.
-                slf_found = any(
-                    "fighterbay" in mod.get("Item", "").lower()
-                    for mod in j.get("Modules", [])
-                )
+                # The bay module item is "int_fighterbay_size<N>_class1".
+                # Size->capacity: 3->1, 5->4, 6->6 (per ED game data).
+                _FIGHTERBAY_CAPACITY = {"3": 1, "5": 4, "6": 6}
+                slf_found = False
+                slf_cap = 0
+                for mod in j.get("Modules", []):
+                    item = mod.get("Item", "").lower()
+                    if "fighterbay" in item:
+                        slf_found = True
+                        import re as _re
+                        m = _re.search(r"fighterbay_size(\d+)", item)
+                        if m:
+                            slf_cap = max(slf_cap, _FIGHTERBAY_CAPACITY.get(m.group(1), 1))
                 state.has_fighter_bay = slf_found
+                if slf_found:
+                    state.slf_stock_total = slf_cap or 1
+                    state.slf_destroyed_count = 0  # reset on ship change / loadout
                 if not slf_found:
                     # No fighter bay — clear SLF state entirely so the panel hides
                     state.slf_type = None
