@@ -46,13 +46,29 @@ class BasePlugin:
         """Called for every journal event whose name is in SUBSCRIBED_EVENTS."""
 
     # ── GUI integration ───────────────────────────────────────────────────────
-
-    def build_block(self, parent_widget):
-        """Return a Gtk.Widget for the dashboard block, or None."""
-        return None
-
-    def refresh_block(self) -> None:
-        """Called by the GUI tick to refresh the block's display."""
+    #
+    # To add a dashboard block, set BLOCK_WIDGET_CLASS to a BlockWidget subclass.
+    # The GUI framework will instantiate it, place it on the dashboard, and call
+    # refresh() on every tick — exactly like the built-in blocks.
+    #
+    # The block will use PLUGIN_NAME as its grid key and PLUGIN_DISPLAY as its
+    # default title.  All chrome (frame, drag, resize handle, footer) is provided
+    # by BlockWidget.  The plugin only fills the content area via build().
+    #
+    # Example:
+    #   from gui.block_base import BlockWidget
+    #
+    #   class MyBlock(BlockWidget):
+    #       BLOCK_TITLE = "My Plugin"
+    #       def build(self, parent): ...
+    #       def refresh(self): ...
+    #
+    #   class MyPlugin(BasePlugin):
+    #       PLUGIN_NAME        = "myplugin"
+    #       BLOCK_WIDGET_CLASS = MyBlock
+    #       ...
+    #
+    BLOCK_WIDGET_CLASS: type | None = None
 
     # ── Summary / alerts ─────────────────────────────────────────────────────
 

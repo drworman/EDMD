@@ -7,7 +7,7 @@
 
 **Real-time AFK session monitoring for Elite Dangerous**
 
-*Kill tracking · Discord alerts · Session awareness · Mission stack tracking · GTK4 GUI*
+*Kill tracking · Discord alerts · Session awareness · Mission stack tracking · Reports · GTK4 GUI*
 
 ---
 
@@ -45,6 +45,9 @@ When things go wrong — your fighter blown up, hull taking critical damage, fue
 | ⚠️ **Inactivity Warnings** | Alerts on kill rate drop or extended period without kills |
 | 🔄 **Hot-Reload Config** | Most settings take effect within ~1 second of saving — no restart needed |
 | 📰 **Automatic Journal Switching** | Seamlessly follows new journal files between game sessions |
+| 📈 **Statistical Reports** | Five journal-wide reports: career overview, bounty breakdown, session history, hunting grounds, and NPC rogues' gallery |
+| 📚 **Native Docs Viewer** | Full documentation browser built into the GUI — no browser needed |
+| 🔌 **Plugin System** | Drop a Python plugin into `plugins/` and it loads automatically with optional dashboard block |
 
 <div align="center">
 <img src="images/gui-screenshot.png" alt="EDMD GTK4 GUI" width="900"/>
@@ -136,6 +139,7 @@ UserID = 123456789012345678
 | [GUI Theming](docs/THEMING.md) | Built-in themes, custom theme creation |
 | [Mission Bootstrap](docs/MISSION_BOOTSTRAP.md) | How EDMD reconstructs mission state on startup |
 | [Plugin Development](docs/PLUGIN_DEVELOPMENT.md) | Plugin interface and CoreAPI reference |
+| [Reports](docs/REPORTS.md) | Statistical reports — what each report covers and how data is sourced |
 
 ### Guides
 

@@ -125,6 +125,13 @@ def load_config_file(config_path: Path) -> dict:
 
 # ── Setting resolution ────────────────────────────────────────────────────────
 
+def _safe_section(d: dict, key: str) -> dict:
+    """Return d[key] if it is a dict, else {}. Prevents crashes when a config
+    key exists but holds a scalar value instead of a nested table."""
+    v = d.get(key)
+    return v if isinstance(v, dict) else {}
+
+
 def load_setting(
     config: dict,
     config_profile: str | None,
@@ -141,17 +148,19 @@ def load_setting(
     """
     settings = {}
 
+    # Pre-extract sections once so the loop is clean and type-safe.
+    # _safe_section guards against any level being a non-dict value.
+    profile_section: dict = _safe_section(config, config_profile) if config_profile else {}
+    profile_cat:     dict = _safe_section(profile_section, category)
+    global_cat:      dict = _safe_section(config, category)
+
     for key in defaults:
         value = None
 
-        if (
-            config_profile
-            and config.get(config_profile, {}).get(category, {}).get(key)
-            is not None
-        ):
-            value = config[config_profile][category][key]
-        elif config.get(category, {}).get(key) is not None:
-            value = config[category][key]
+        if profile_cat.get(key) is not None:
+            value = profile_cat[key]
+        elif global_cat.get(key) is not None:
+            value = global_cat[key]
         else:
             value = defaults[key]
             if warn_missing:
@@ -180,7 +189,7 @@ def pcfg(config: dict, config_profile: str | None, key: str, default=False):
     These keys are profile-gated by design (e.g. _adv_session_mgmt).
     """
     if config_profile:
-        v = config.get(config_profile, {}).get(key)
+        v = _safe_section(config, config_profile).get(key)
         if v is not None:
             return v
     return default

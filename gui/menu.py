@@ -44,30 +44,36 @@ class EdmdMenuBar:
         self._win         = window
         self._block_names = block_names
         self._check_items: dict[str, Gtk.CheckButton] = {}
-        self._widget      = self._build()
+        self._buttons: list[Gtk.MenuButton] = []
+        self._build()
 
     def widget(self) -> Gtk.Widget:
-        return self._widget
+        """Assemble buttons into a standalone bar box (for non-HeaderBar use)."""
+        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        bar.add_css_class("edmd-menubar")
+        for btn in self._buttons:
+            bar.append(btn)
+        return bar
+
+    def buttons(self) -> list:
+        """Return the individual MenuButton widgets for packing into a HeaderBar."""
+        return self._buttons
 
     # ── Build ──────────────────────────────────────────────────────────────────
 
-    def _build(self) -> Gtk.Box:
-        """Build the menu bar as a horizontal box of MenuButton dropdowns."""
-        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        bar.add_css_class("edmd-menubar")
-
+    def _build(self) -> None:
+        """Build MenuButton objects and store them. No parenting yet."""
         for label, builder in [
             ("File",     self._build_file_menu),
             ("View",     self._build_view_menu),
             ("Settings", self._build_settings_menu),
+            ("Reports",  self._build_reports_menu),
             ("Help",     self._build_help_menu),
         ]:
             btn = Gtk.MenuButton(label=label)
             btn.add_css_class("menubar-btn")
             btn.set_popover(builder())
-            bar.append(btn)
-
-        return bar
+            self._buttons.append(btn)
 
     def _popover(self) -> Gtk.Popover:
         pop = Gtk.Popover()
@@ -154,6 +160,19 @@ class EdmdMenuBar:
         pop.set_child(box)
         return pop
 
+    # ── Reports menu ──────────────────────────────────────────────────────────
+
+    def _build_reports_menu(self) -> Gtk.Popover:
+        pop = self._popover()
+        box = self._vbox()
+
+        from core.reports import REPORT_REGISTRY
+        for key, display, _ in REPORT_REGISTRY:
+            box.append(self._menu_btn(f"  {display}", lambda *_, k=key: self._on_report(k)))
+
+        pop.set_child(box)
+        return pop
+
     # ── Help menu ─────────────────────────────────────────────────────────────
 
     def _build_help_menu(self) -> Gtk.Popover:
@@ -211,7 +230,38 @@ class EdmdMenuBar:
         self._show_plugins_dialog()
 
     def _on_docs(self, *_) -> None:
-        webbrowser.open(DOCS_URL)
+        from gui.docs_viewer import DocsViewer
+        viewer = DocsViewer(self._win)
+        viewer.present()
+
+    def _on_report(self, key: str) -> None:
+        journal_dir = self._win._core.journal_dir
+        if not journal_dir:
+            self._show_no_journal_dialog()
+            return
+        from pathlib import Path
+        from gui.reports_viewer import ReportsViewer
+        viewer = ReportsViewer(self._win, Path(journal_dir), initial_key=key)
+        viewer.present()
+
+    def _show_no_journal_dialog(self) -> None:
+        dlg = Gtk.Window(title="No Journal Folder")
+        dlg.set_transient_for(self._win)
+        dlg.set_modal(True)
+        dlg.set_default_size(340, -1)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_margin_top(20); box.set_margin_bottom(20)
+        box.set_margin_start(20); box.set_margin_end(20)
+        dlg.set_child(box)
+        lbl = Gtk.Label(label="Journal folder is not configured.\nSet JournalFolder in config.toml.")
+        lbl.set_wrap(True); lbl.add_css_class("doc-para")
+        box.append(lbl)
+        btn = Gtk.Button(label="OK")
+        btn.add_css_class("about-close")
+        btn.set_halign(Gtk.Align.CENTER)
+        btn.connect("clicked", lambda *_: dlg.close())
+        box.append(btn)
+        dlg.present()
 
     def _on_github(self, *_) -> None:
         webbrowser.open(GITHUB_URL)

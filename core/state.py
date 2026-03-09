@@ -18,7 +18,7 @@ from pathlib import Path
 PROGRAM = "Elite Dangerous Monitor Daemon"
 DESC    = "Continuous monitoring of Elite Dangerous AFK sessions."
 AUTHOR  = "CMDR CALURSUS"
-VERSION = "20260309"
+VERSION = "20260309a"
 GITHUB_REPO = "drworman/EDMD"
 DEBUG_MODE  = False
 

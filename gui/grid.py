@@ -28,18 +28,19 @@ from core.state import EDMD_DATA_DIR
 LAYOUT_FILE = Path(EDMD_DATA_DIR) / "layout.json"
 
 COLS     = 24
-ROW_PX   = 40
-GAP      = 8
+ROW_PX   = 20
+GAP      = 4
 MIN_W    = 4
-MIN_H    = 2
+MIN_H    = 1
 
 # Default block layout — used when layout.json is absent or malformed.
+# Heights doubled from original values to compensate for halved ROW_PX.
 DEFAULT_LAYOUT = {
-    "commander":    {"col": 0,  "row": 0, "width": 8,  "height": 5},
-    "session_stats":{"col": 8,  "row": 0, "width": 8,  "height": 5},
-    "crew_slf":     {"col": 16, "row": 0, "width": 8,  "height": 5},
-    "missions":     {"col": 0,  "row": 5, "width": 12, "height": 4},
-    "alerts":       {"col": 0,  "row": 9, "width": 24, "height": 3},
+    "commander":    {"col": 0,  "row": 0,  "width": 8,  "height": 10},
+    "session_stats":{"col": 8,  "row": 0,  "width": 8,  "height": 10},
+    "crew_slf":     {"col": 16, "row": 0,  "width": 8,  "height": 10},
+    "missions":     {"col": 0,  "row": 10, "width": 12, "height": 8},
+    "alerts":       {"col": 0,  "row": 18, "width": 24, "height": 10},
 }
 
 
@@ -63,8 +64,9 @@ class BlockGrid:
         grid.save()                                # persist to disk
     """
 
-    def __init__(self, canvas_width: int = 1280):
-        self._canvas_width = canvas_width
+    def __init__(self, canvas_width: int = 1280, canvas_height: int = 760):
+        self._canvas_width  = canvas_width
+        self._canvas_height = canvas_height
         self._cells: dict[str, GridCell] = {}
         self._load()
 
@@ -134,13 +136,30 @@ class BlockGrid:
         """Width of one column unit in pixels."""
         return (self._canvas_width - GAP) / COLS
 
+    def row_height(self) -> float:
+        """Height of one row unit in pixels.
+        Equals ROW_PX normally; scales down proportionally if the canvas is
+        shorter than the natural layout extent so blocks always fit."""
+        natural_rows = self._natural_row_extent()
+        natural_h    = natural_rows * ROW_PX
+        if natural_h <= 0 or self._canvas_height >= natural_h:
+            return float(ROW_PX)
+        return max(ROW_PX / 2, self._canvas_height / natural_rows)
+
+    def _natural_row_extent(self) -> int:
+        """Total rows spanned by the current layout (max row + height)."""
+        if not self._cells:
+            return 24   # fallback
+        return max(c.row + c.height for c in self._cells.values())
+
     def pixel_rect(self, cell: GridCell) -> tuple[int, int, int, int]:
         """Return (x, y, width, height) in pixels for a GridCell."""
         cw = self.col_width()
+        rh = self.row_height()
         x  = int(cell.col * cw + GAP)
-        y  = int(cell.row * ROW_PX + GAP)
-        w  = int(cell.width * cw - GAP)
-        h  = int(cell.height * ROW_PX - GAP)
+        y  = int(cell.row * rh + GAP)
+        w  = int(cell.width  * cw - GAP)
+        h  = int(cell.height * rh - GAP)
         return x, y, w, h
 
     def snap_to_col(self, px: float) -> int:
@@ -151,9 +170,14 @@ class BlockGrid:
 
     def snap_to_row(self, py: float) -> int:
         """Snap a pixel y-coordinate to the nearest row index."""
-        row = round((py - GAP) / ROW_PX)
+        rh = self.row_height()
+        row = round((py - GAP) / rh)
         return max(0, row)
 
     def update_canvas_width(self, width: int) -> None:
-        """Call when the window is resized so pixel geometry stays correct."""
+        """Call when the window width changes."""
         self._canvas_width = max(1, width)
+
+    def update_canvas_height(self, height: int) -> None:
+        """Call when the window height changes."""
+        self._canvas_height = max(1, height)

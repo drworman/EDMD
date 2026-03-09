@@ -262,6 +262,7 @@ core = CoreAPI(
     emitter=emitter,
     gui_queue=gui_queue,
     journal_dir=journal_dir,
+    launch_argv=sys.argv,
 )
 
 loader = PluginLoader(_HERE)

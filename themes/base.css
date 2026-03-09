@@ -34,7 +34,7 @@
 
 headerbar.edmd-header {
     min-height: 0;
-    padding: 0.15em 4px;
+    padding: 0 4px;
     background-color: var(--bg-deep);
     background-image: none;
     box-shadow: none;
@@ -46,23 +46,44 @@ headerbar.edmd-header .title {
     padding: 0;
     margin: 0;
 }
-headerbar.edmd-header windowcontrols {
-    padding: 0 2px;
-    margin: 0;
-}
-headerbar.edmd-header windowcontrols button {
+/* ── Custom window controls ─────────────────────────────────────────────── */
+/* Adwaita CSD buttons are hidden (set_show_title_buttons False).
+   We use plain Gtk.Button with .wctl-btn / .wctl-close classes instead. */
+
+headerbar.edmd-header button.wctl-btn {
     min-height: 0;
     min-width: 0;
-    padding: 3px;
-    margin: 0;
-    color: var(--accent);
-    background-color: transparent;
-    background-image: none;
+    padding: 3px 5px;
+    margin: 0 1px;
+    color: var(--fg-dim);
+    background: transparent none;
     box-shadow: none;
     border: none;
+    border-radius: 3px;
 }
-headerbar.edmd-header windowcontrols button:hover {
-    background-color: var(--accent-hover);
+
+headerbar.edmd-header button.wctl-btn:hover {
+    color: var(--accent);
+    background: var(--accent-hover) none;
+    box-shadow: none;
+}
+
+headerbar.edmd-header button.wctl-btn:active {
+    color: var(--bg-deep);
+    background: var(--accent) none;
+    box-shadow: none;
+}
+
+headerbar.edmd-header button.wctl-close:hover {
+    color: #ffffff;
+    background: #c0392b none;
+    box-shadow: none;
+}
+
+headerbar.edmd-header button.wctl-close:active {
+    color: #ffffff;
+    background: #922b21 none;
+    box-shadow: none;
 }
 headerbar.edmd-header button.flat {
     min-height: 0;
@@ -227,10 +248,12 @@ headerbar.edmd-header .header-title {
 
 progressbar.pp-rank-bar {
     min-height: 4px;
+    min-width: 40px;
 }
 
 progressbar.pp-rank-bar trough {
     min-height: 4px;
+    min-width: 40px;
     border-radius: 2px;
     background-color: var(--border);
     border: none;
@@ -238,10 +261,20 @@ progressbar.pp-rank-bar trough {
 
 progressbar.pp-rank-bar progress {
     min-height: 4px;
-    border-radius: 2px;
+    min-width: 0;
+    border-radius: 0;
     background-color: var(--accent);
     background-image: none;
     border: none;
+}
+
+progressbar.pp-rank-bar progress > fill {
+    min-height: 4px;
+    min-width: 0;
+    background-color: var(--accent);
+    background-image: none;
+    border: none;
+    border-radius: 0;
 }
 
 /* ── Update available notice ─────────────────────────────────────────────── */
@@ -341,6 +374,20 @@ progressbar.pp-rank-bar progress {
     min-height: 0;
 }
 
+.dashboard-scroll {
+    background: transparent;
+    border: none;
+}
+
+.dashboard-scroll > scrollbar {
+    opacity: 0.4;
+    min-width: 4px;
+}
+
+.dashboard-scroll > scrollbar:hover {
+    opacity: 0.8;
+}
+
 .dashboard-canvas {
     background-color: var(--bg-deep);
 }
@@ -356,47 +403,74 @@ progressbar.pp-rank-bar progress {
     border: 1px solid var(--border);
     background-color: var(--bg-mid);
     padding: 0;
+    margin: 0.5em;
 }
 
 .dashboard-block > * {
     padding: 0;
 }
 
-/* ── Menu bar ────────────────────────────────────────────────────────────── */
+/* ── Menu buttons (now embedded in HeaderBar) ────────────────────────────── */
 
 .edmd-menubar {
     background-color: var(--bg-mid);
     border-bottom: 1px solid var(--border);
-    padding: 0 4px;
+    padding: 0 2px;
     min-height: 0;
 }
 
 .menubar-btn {
-    font-size: 0.82em;
-    padding: 3px 10px;
+    font-size: 0.80em;
+    padding: 0 7px;
     border-radius: 0;
     border: none;
-    background: transparent;
-    background-image: none;
+    background: transparent none;
     box-shadow: none;
     color: var(--fg);
     min-height: 0;
 }
 
-.menubar-btn:hover {
-    background-color: var(--accent-hover);
+.menubar-btn:hover,
+.menubar-btn:active {
+    background: var(--accent-hover) none;
     color: var(--accent);
+    box-shadow: none;
+    border: none;
 }
 
-.edmd-menu-popover {
+/* GTK4 popover overrides — must target the internal nodes directly.
+   Class-only rules are not enough; GTK applies its own Adwaita backdrop. */
+
+popover {
+    background-color: var(--bg-mid);
+    color: var(--fg);
+}
+
+popover > contents {
     background-color: var(--bg-mid);
     border: 1px solid var(--border);
     border-radius: 4px;
     padding: 4px 0;
+    color: var(--fg);
+}
+
+popover arrow {
+    background-color: var(--bg-mid);
+    border-color: var(--border);
+}
+
+.edmd-menu-popover,
+.edmd-menu-popover > contents {
+    background-color: var(--bg-mid);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 0;
+    color: var(--fg);
 }
 
 .menu-box {
     min-width: 180px;
+    background-color: var(--bg-mid);
 }
 
 .menu-item {
@@ -408,7 +482,6 @@ progressbar.pp-rank-bar progress {
     background-image: none;
     box-shadow: none;
     color: var(--fg);
-    text-align: left;
     min-height: 0;
 }
 
@@ -422,6 +495,16 @@ progressbar.pp-rank-bar progress {
     padding: 4px 16px;
     color: var(--fg);
     background: transparent;
+}
+
+.menu-check check {
+    background-color: var(--bg-deep);
+    border-color: var(--border);
+}
+
+.menu-check:checked check {
+    background-color: var(--accent);
+    border-color: var(--accent);
 }
 
 .menu-section-label {
@@ -441,8 +524,11 @@ progressbar.pp-rank-bar progress {
 /* ── About / Plugins dialog ──────────────────────────────────────────────── */
 
 .about-dialog,
-.plugins-dialog {
+.about-dialog > *,
+.plugins-dialog,
+.plugins-dialog > * {
     background-color: var(--bg-mid);
+    color: var(--fg);
 }
 
 .about-title {
@@ -483,11 +569,32 @@ progressbar.pp-rank-bar progress {
 
 /* ── Preferences window ──────────────────────────────────────────────────── */
 
-.prefs-window {
+.prefs-window,
+.prefs-window > *,
+.prefs-notebook,
+.prefs-notebook > * {
+    background-color: var(--bg-mid);
+    color: var(--fg);
+}
+
+notebook > header {
+    background-color: var(--bg-deep);
+    border-bottom: 1px solid var(--border);
+}
+
+notebook > header tab {
+    padding: 4px 12px;
+    color: var(--fg-dim);
+    background-color: transparent;
+    border-radius: 3px 3px 0 0;
+}
+
+notebook > header tab:checked {
+    color: var(--accent);
     background-color: var(--bg-mid);
 }
 
-.prefs-notebook {
+notebook stack {
     background-color: var(--bg-mid);
 }
 
@@ -530,4 +637,423 @@ progressbar.pp-rank-bar progress {
 
 .prefs-btn-apply:hover {
     background-color: color-mix(in srgb, var(--accent) 80%, white 20%);
+}
+
+/* ── Block drag / resize states ──────────────────────────────────────────── */
+
+.block-dragging {
+    opacity: 0.75;
+    border-color: var(--accent);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+.block-resizing {
+    border-color: var(--accent);
+}
+
+.block-footer {
+    min-height: 10px;
+    padding: 0 2px 0 4px;
+    border-top: 1px solid var(--border);
+    background-color: transparent;
+}
+
+.resize-handle {
+    font-size: 0.85em;
+    font-weight: bold;
+    color: var(--accent);
+    padding: 0 2px;
+    opacity: 0.6;
+}
+
+.resize-handle:hover {
+    color: var(--fg);
+    opacity: 1.0;
+}
+
+/* ── GTK widget overrides — force all interactive widgets to respect theme ─── */
+/* Buttons */
+button {
+    background-color: var(--bg-deep);
+    background-image: none;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+    padding: 3px 10px;
+}
+
+button:hover {
+    background-color: var(--accent-hover);
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+}
+
+button:active {
+    background-color: var(--accent);
+    color: #000;
+    box-shadow: none;
+}
+
+button.flat,
+button.flat:hover {
+    border: none;
+    box-shadow: none;
+    background-color: transparent;
+    background-image: none;
+}
+
+button.flat:hover {
+    background-color: var(--accent-hover);
+    color: var(--accent);
+}
+
+/* Entries */
+entry {
+    background-color: var(--bg-deep);
+    background-image: none;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.3);
+    padding: 3px 6px;
+}
+
+entry:focus {
+    border-color: var(--accent);
+    outline: none;
+}
+
+/* SpinButton */
+spinbutton {
+    background-color: var(--bg-deep);
+    background-image: none;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+}
+
+spinbutton button {
+    border: none;
+    box-shadow: none;
+    background-color: transparent;
+    color: var(--fg-dim);
+    padding: 0 4px;
+    min-width: 0;
+}
+
+spinbutton button:hover {
+    background-color: var(--accent-hover);
+    color: var(--accent);
+    border: none;
+    box-shadow: none;
+}
+
+/* ComboBox */
+combobox,
+combobox button {
+    background-color: var(--bg-deep);
+    background-image: none;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+combobox button:hover {
+    border-color: var(--accent);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+
+/* Switch */
+switch {
+    background-color: var(--bg-deep);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+}
+
+switch:checked {
+    background-color: var(--accent);
+    border-color: var(--accent);
+}
+
+switch slider {
+    background-color: var(--fg-dim);
+    border-radius: 10px;
+    min-width: 18px;
+    min-height: 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
+switch:checked slider {
+    background-color: #fff;
+}
+
+/* ScrolledWindow scrollbars */
+scrollbar {
+    background-color: var(--bg-deep);
+}
+
+scrollbar slider {
+    background-color: var(--border);
+    border-radius: 3px;
+    min-width: 6px;
+    min-height: 6px;
+}
+
+scrollbar slider:hover {
+    background-color: var(--accent);
+}
+
+/* LinkButton */
+link {
+    color: var(--accent);
+}
+
+link:hover {
+    color: var(--accent-dim);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Documentation Viewer
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.docs-viewer, .reports-viewer {
+    background-color: var(--bg-deep);
+}
+
+.docs-toolbar {
+    background-color: var(--bg-mid);
+    border-bottom: 1px solid var(--border);
+    padding: 2px 4px;
+    min-height: 0;
+}
+
+.docs-nav-btn {
+    font-size: 0.80em;
+    padding: 2px 10px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    background: transparent none;
+    color: var(--fg-dim);
+    box-shadow: none;
+    min-height: 0;
+}
+
+.docs-nav-btn:hover {
+    color: var(--accent);
+    background: var(--accent-hover) none;
+    border-color: var(--accent-dim);
+}
+
+.docs-sidebar-scroll {
+    background-color: var(--bg-mid);
+    border-right: 1px solid var(--border);
+}
+
+.docs-sidebar {
+    background-color: var(--bg-mid);
+}
+
+.docs-sidebar-btn {
+    font-size: 0.82em;
+    padding: 5px 12px;
+    border-radius: 0;
+    border: none;
+    background: transparent none;
+    color: var(--fg-dim);
+    box-shadow: none;
+    min-height: 0;
+}
+
+.docs-sidebar-btn:hover {
+    background: var(--accent-hover) none;
+    color: var(--fg);
+}
+
+.docs-sidebar-btn-active {
+    background: var(--accent-hover) none;
+    color: var(--accent);
+    border-left: 2px solid var(--accent);
+}
+
+.docs-sidebar-section {
+    font-size: 0.72em;
+    color: var(--fg-sep);
+    padding: 2px 8px;
+}
+
+.docs-content-scroll {
+    background-color: var(--bg-deep);
+}
+
+.docs-content {
+    background-color: var(--bg-deep);
+}
+
+.docs-breadcrumb {
+    font-size: 0.82em;
+    color: var(--fg-dim);
+}
+
+/* ── Markdown rendering ─────────────────────────────────────────────────── */
+
+.doc-h1 {
+    font-size: 1.4em;
+    font-weight: bold;
+    color: var(--accent);
+    margin-top: 6px;
+    margin-bottom: 4px;
+}
+
+.doc-h2 {
+    font-size: 1.15em;
+    font-weight: bold;
+    color: var(--fg);
+    margin-top: 8px;
+    margin-bottom: 2px;
+}
+
+.doc-h3 {
+    font-size: 1.0em;
+    font-weight: bold;
+    color: var(--fg);
+    margin-top: 4px;
+}
+
+.doc-h4 {
+    font-size: 0.92em;
+    font-weight: bold;
+    color: var(--fg-dim);
+}
+
+.doc-para {
+    font-size: 0.90em;
+    color: var(--fg);
+    margin-top: 2px;
+    margin-bottom: 2px;
+}
+
+.doc-code-frame {
+    background-color: var(--bg-log);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.doc-code {
+    font-family: monospace;
+    font-size: 0.82em;
+    color: var(--fg-log);
+    background-color: var(--bg-log);
+}
+
+.doc-blockquote {
+    border-left: 3px solid var(--accent-dim);
+    background-color: var(--bg-mid);
+    border-radius: 0 3px 3px 0;
+    margin-left: 8px;
+}
+
+.doc-blockquote-text {
+    font-size: 0.88em;
+    color: var(--fg-dim);
+    font-style: italic;
+}
+
+.doc-bullet {
+    font-size: 0.88em;
+    color: var(--accent);
+    min-width: 12px;
+}
+
+.doc-li {
+    font-size: 0.88em;
+    color: var(--fg);
+}
+
+.doc-hr {
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.doc-table {
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.doc-table-header {
+    font-size: 0.82em;
+    font-weight: bold;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 2px;
+}
+
+.doc-table-cell {
+    font-size: 0.82em;
+    color: var(--fg);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Reports Viewer
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.reports-title {
+    font-size: 0.88em;
+    font-weight: bold;
+    color: var(--fg);
+}
+
+.reports-report-title {
+    font-size: 1.3em;
+    font-weight: bold;
+    color: var(--accent);
+    margin-bottom: 4px;
+}
+
+.reports-subtitle {
+    font-size: 0.85em;
+    color: var(--fg-dim);
+    margin-bottom: 8px;
+}
+
+.reports-section-heading {
+    font-size: 0.95em;
+    font-weight: bold;
+    color: var(--fg);
+    margin-top: 8px;
+    margin-bottom: 4px;
+}
+
+.reports-loading {
+    font-size: 0.90em;
+    color: var(--fg-dim);
+}
+
+.reports-sort-btn {
+    font-size: 0.76em;
+    padding: 1px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    background: transparent none;
+    color: var(--fg-dim);
+    box-shadow: none;
+    min-height: 0;
+}
+
+.reports-sort-btn:hover {
+    color: var(--accent);
+    background: var(--accent-hover) none;
+    border-color: var(--accent-dim);
+}
+
+
+/* Restart-required banner in Preferences */
+.prefs-restart-banner {
+    color: #f5a623;
+    font-weight: bold;
+    padding: 2px 4px;
 }

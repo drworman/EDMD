@@ -42,7 +42,10 @@ class MissionsPlugin(BasePlugin):
 
         match ev:
 
-            case "MissionRedirected" if "Mission_Massacre" in event.get("Name", ""):
+            case "MissionRedirected" if (
+                "Mission_Massacre" in event.get("Name", "")
+                and not state.in_preload
+            ):
                 state.missions_complete += 1
                 total = len(state.active_missions)
                 done  = state.missions_complete
@@ -110,7 +113,10 @@ class MissionsPlugin(BasePlugin):
                 )
                 if gq: gq.put(("mission_update", None))
 
-            case "MissionAccepted" if "Mission_Massacre" in event.get("Name", ""):
+            case "MissionAccepted" if (
+                "Mission_Massacre" in event.get("Name", "")
+                and not state.in_preload
+            ):
                 state.active_missions.append(event["MissionID"])
                 if "Reward" in event:
                     state.stack_value += event["Reward"]
@@ -134,7 +140,9 @@ class MissionsPlugin(BasePlugin):
                 if gq: gq.put(("mission_update", None))
 
             case "MissionAbandoned" | "MissionCompleted" | "MissionFailed" if (
-                state.missions and event.get("MissionID") in state.active_missions
+                state.missions
+                and not state.in_preload
+                and event.get("MissionID") in state.active_missions
             ):
                 mid    = event["MissionID"]
                 reward = state.mission_value_map.pop(mid, 0)

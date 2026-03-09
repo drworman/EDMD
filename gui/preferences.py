@@ -70,7 +70,11 @@ class PreferencesWindow(Gtk.Window):
 
         self._core    = core
         self._cfg     = core.cfg
-        self._changed = {}   # key → new value, flushed on Apply
+        # Changes are split by whether they need a restart or are hot-reloadable.
+        # Keys mirror the section/key structure written to config.toml.
+        self._hot:     dict = {}   # section → {key: value}  — hot-reload on apply
+        self._restart: dict = {}   # section → {key: value}  — needs os.execv after apply
+        self._restart_banner: Gtk.InfoBar | None = None
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.set_child(outer)
@@ -84,6 +88,20 @@ class PreferencesWindow(Gtk.Window):
         self._build_notifications_tab(notebook)
         self._build_discord_tab(notebook)
         self._build_appearance_tab(notebook)
+
+        # Restart-required banner (hidden until a restart-required field changes)
+        banner = Gtk.InfoBar()
+        banner.set_message_type(Gtk.MessageType.WARNING)
+        banner.set_revealed(False)
+        banner.set_show_close_button(False)
+        banner_lbl = Gtk.Label(
+            label="⚠  Some changes require a restart — the app will restart automatically on Apply."
+        )
+        banner_lbl.set_xalign(0.0)
+        banner_lbl.add_css_class("prefs-restart-banner")
+        banner.add_child(banner_lbl)
+        outer.append(banner)
+        self._restart_banner = banner
 
         # Button row
         btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -327,24 +345,54 @@ class PreferencesWindow(Gtk.Window):
         box.append(self._row("Active Theme", combo, restart_required=True))
 
     # ── Change tracking ───────────────────────────────────────────────────────
+    #
+    # RESTART_REQUIRED keys — must match restart_required=True in the tab builders.
+    # Any change to these triggers os.execv on Apply.
+    #
+    _RESTART_KEYS: dict[str, set[str]] = {
+        "Settings": {"JournalFolder"},
+        "Discord":  {"WebhookURL", "UserID", "Identity",
+                     "ForumChannel", "ThreadCmdrNames", "Timestamp"},
+        "GUI":      {"Theme"},
+    }
+
+    def _record(self, section: str, key: str, value) -> None:
+        """Route a change to _restart or _hot depending on the key."""
+        if key in self._RESTART_KEYS.get(section, set()):
+            self._restart.setdefault(section, {})[key] = value
+            if self._restart_banner:
+                self._restart_banner.set_revealed(True)
+        else:
+            self._hot.setdefault(section, {})[key] = value
 
     def _track(self, key: str, value) -> None:
-        self._changed.setdefault("Settings", {})[key] = value
+        self._record("Settings", key, value)
 
     def _track_notify(self, key: str, value: int) -> None:
-        self._changed.setdefault("LogLevels", {})[key] = value
+        self._record("LogLevels", key, value)
 
     def _track_discord(self, key: str, value) -> None:
-        self._changed.setdefault("Discord", {})[key] = value
+        self._record("Discord", key, value)
 
     def _track_gui(self, key: str, value) -> None:
-        self._changed.setdefault("GUI", {})[key] = value
+        self._record("GUI", key, value)
 
     # ── Apply & Save ──────────────────────────────────────────────────────────
 
     def _on_apply(self, *_) -> None:
-        """Write changes to config.toml, then force a hot-reload."""
-        if not self._changed:
+        """Write all pending changes to config.toml.
+
+        Hot changes take effect immediately via cfg.refresh().
+        Restart-required changes trigger os.execv with the original launch argv
+        so the new process inherits the same flags (-g, -p, etc.).
+        """
+        import os
+
+        all_changes: dict = {}
+        for section, kvs in {**self._hot, **self._restart}.items():
+            all_changes.setdefault(section, {}).update(kvs)
+
+        if not all_changes:
             self.close()
             return
 
@@ -356,18 +404,21 @@ class PreferencesWindow(Gtk.Window):
             self._show_error(f"Could not read config.toml:\n{e}")
             return
 
-        # Merge changes into the parsed config dict
-        for section, kvs in self._changed.items():
-            if section not in config:
-                config[section] = {}
+        # Merge into the active profile section if one is set, otherwise global
+        profile = self._cfg.config_profile
+        for section, kvs in all_changes.items():
+            if profile:
+                # Write into [PROFILE.Section] — create both levels if needed
+                profile_dict = config.setdefault(profile, {})
+                target = profile_dict.setdefault(section, {})
+            else:
+                target = config.setdefault(section, {})
             for k, v in kvs.items():
-                # UserID: store as int if possible
                 if k == "UserID":
                     try: v = int(v)
                     except (ValueError, TypeError): v = 0
-                config[section][k] = v
+                target[k] = v
 
-        # Write back — use a minimal TOML serializer
         try:
             new_toml = _dict_to_toml(config)
             config_path.write_text(new_toml, encoding="utf-8")
@@ -375,14 +426,29 @@ class PreferencesWindow(Gtk.Window):
             self._show_error(f"Could not write config.toml:\n{e}")
             return
 
-        # Force hot-reload
-        try:
-            self._cfg.refresh(terminal_print=False)
-        except Exception:
-            pass
+        needs_restart = bool(self._restart)
 
-        self._changed.clear()
-        self.close()
+        self._hot.clear()
+        self._restart.clear()
+
+        if needs_restart:
+            # Restart the entire process with identical launch arguments.
+            # os.execv replaces this process in-place; the new instance reads
+            # the freshly written config and picks up all changes cleanly.
+            import sys as _sys
+            launch_argv = getattr(self._core, "launch_argv", None) or _sys.argv
+            python = _sys.executable
+            # launch_argv[0] is the script path (e.g. edmd.py); must be kept
+            # as the first argument after the interpreter, not dropped.
+            # Correct form: execv(python, [python, edmd.py, -g, -p, EDP1, ...])
+            os.execv(python, [python] + list(launch_argv))
+        else:
+            # Hot-reload only — no restart needed
+            try:
+                self._cfg.refresh(terminal_print=False)
+            except Exception:
+                pass
+            self.close()
 
     def _show_error(self, msg: str) -> None:
         dlg = Gtk.MessageDialog(
@@ -396,34 +462,74 @@ class PreferencesWindow(Gtk.Window):
         dlg.present()
 
 
-# ── Minimal TOML writer ───────────────────────────────────────────────────────
+# ── Restart helper ────────────────────────────────────────────────────────────
+
+def import_python_executable() -> str:
+    """Return the Python interpreter path for os.execv restart."""
+    import sys
+    return sys.executable
+
+
+# ── TOML writer ──────────────────────────────────────────────────────────────
 
 def _dict_to_toml(d: dict) -> str:
     """
-    Write a flat-section TOML dict back to a string.
-    Handles: str, int, float, bool, nested one-level dicts (sections).
-    Sufficient for EDMD's config.toml structure.
-    """
-    lines = []
+    Serialise a config dict back to TOML, correctly handling the two-level
+    nesting that EDMD profiles require.
 
-    def _val(v) -> str:
-        if isinstance(v, bool):  return "true" if v else "false"
-        if isinstance(v, int):   return str(v)
-        if isinstance(v, float): return str(v)
-        # string — escape backslashes and quotes
+    Structure supported:
+      top-level scalars        → bare key = value
+      top-level dicts          → [Section] with scalar keys
+        sub-dicts inside those → [Section.SubSection] with scalar keys,
+                                  emitted as a separate table header
+
+    This preserves EDP1 / REMOTE profile sections where some keys are flat
+    (QuitOnLowFuel = true) and others are nested (Settings.JournalFolder = "...").
+    Without this, tomllib round-trips were corrupting profiles by serialising
+    nested dicts as Python repr strings.
+    """
+
+    def _scalar(v) -> str:
+        """Format a scalar value as a TOML literal."""
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        if isinstance(v, int):
+            return str(v)
+        if isinstance(v, float):
+            return str(v)
         escaped = str(v).replace("\\", "\\\\").replace('"', '\\"')
         return f'"{escaped}"'
 
-    # Top-level scalar keys first
+    lines: list[str] = []
+
+    # ── Pass 1: top-level scalars ─────────────────────────────────────────────
     for k, v in d.items():
         if not isinstance(v, dict):
-            lines.append(f"{k} = {_val(v)}")
+            lines.append(f"{k} = {_scalar(v)}")
 
-    # Sections
-    for k, v in d.items():
-        if isinstance(v, dict):
-            lines.append(f"\n[{k}]")
-            for sk, sv in v.items():
-                lines.append(f"{sk} = {_val(sv)}")
+    # ── Pass 2: top-level sections ────────────────────────────────────────────
+    for section_key, section_val in d.items():
+        if not isinstance(section_val, dict):
+            continue
+
+        lines.append(f"")
+        lines.append(f"[{section_key}]")
+
+        # Scalars in this section first
+        for k, v in section_val.items():
+            if not isinstance(v, dict):
+                lines.append(f"{k} = {_scalar(v)}")
+
+        # Sub-tables inside this section as [Section.SubSection]
+        for sub_key, sub_val in section_val.items():
+            if not isinstance(sub_val, dict):
+                continue
+            lines.append(f"")
+            lines.append(f"[{section_key}.{sub_key}]")
+            for k, v in sub_val.items():
+                if isinstance(v, dict):
+                    # Three levels deep — not used in EDMD config, skip safely
+                    continue
+                lines.append(f"{k} = {_scalar(v)}")
 
     return "\n".join(lines) + "\n"

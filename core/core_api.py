@@ -53,6 +53,7 @@ class CoreAPI:
         gui_queue: queue.Queue | None,
         journal_dir: Path,
         trace_mode: bool = False,
+        launch_argv: list[str] | None = None,
     ):
         self.state          = state
         self.active_session = active_session
@@ -62,6 +63,8 @@ class CoreAPI:
         self.gui_queue      = gui_queue
         self.journal_dir    = journal_dir
         self.trace_mode     = trace_mode
+        # Original sys.argv captured at startup — used for in-process restart
+        self.launch_argv: list[str] = list(launch_argv) if launch_argv else []
 
         # Formatting helpers — available as core.fmt_credits(...) etc.
         self.fmt_credits  = fmt_credits

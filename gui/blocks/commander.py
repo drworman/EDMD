@@ -60,6 +60,7 @@ class CommanderBlock(BlockWidget):
         self._pp_rank_bar.set_fraction(0.0)
         self._pp_rank_bar.add_css_class("pp-rank-bar")
         self._pp_rank_bar.set_show_text(False)
+        self._pp_rank_bar.set_size_request(40, 4)
         bar_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         bar_box.add_css_class("pp-rank-bar-row")
         bar_box.append(self._pp_rank_bar)
@@ -169,3 +170,11 @@ class CommanderBlock(BlockWidget):
         else:
             hc = hull_css(s.ship_hull) if s.ship_hull is not None else "health-good"
             self._cmdr_health.add_css_class(hc)
+
+    def cleanup(self) -> None:
+        """Zero the progress bar fraction before window teardown.
+        Must be called from the window's close-request handler while the
+        widget tree is still intact — prevents the GTK gizmo width warning."""
+        if hasattr(self, "_pp_rank_bar"):
+            self._pp_rank_bar.set_fraction(0.0)
+            self._pp_rank_bar.set_visible(False)

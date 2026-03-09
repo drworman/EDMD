@@ -1,7 +1,7 @@
 # EDMD Configuration Reference
 
 > ✅ = **Hot-reloadable** — takes effect within ~1 second of saving `config.toml`
-> ❌ = **Restart required**
+> ❌ = **Restart required** — when changed via the Preferences dialog, EDMD restarts automatically
 
 ---
 
@@ -44,7 +44,7 @@
 | Key | Default | Hot | Description |
 |-----|---------|:---:|-------------|
 | `Enabled` | `false` | ❌ | Launch GUI on startup (same as `--gui` flag) |
-| `Theme` | `"default"` | ❌ | Theme filename in `themes/` (without `.css`) |
+| `Theme` | `"default"` | ❌ | Theme filename in `themes/` (without `.css`) — changing this in Preferences triggers an automatic restart |
 
 ---
 
