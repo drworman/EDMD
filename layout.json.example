@@ -1,0 +1,9 @@
+{
+  "blocks": {
+    "commander":     {"col": 0,  "row": 0, "width": 8,  "height": 5},
+    "session_stats": {"col": 8,  "row": 0, "width": 8,  "height": 5},
+    "crew_slf":      {"col": 16, "row": 0, "width": 8,  "height": 5},
+    "missions":      {"col": 0,  "row": 5, "width": 12, "height": 4},
+    "alerts":        {"col": 0,  "row": 9, "width": 24, "height": 3}
+  }
+}

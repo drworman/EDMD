@@ -331,3 +331,203 @@ progressbar.pp-rank-bar progress {
     font-weight: 500;
     color: var(--fg);
 }
+
+/* ── Dashboard layout ────────────────────────────────────────────────────── */
+
+.edmd-titlebar {
+    padding: 2px 4px;
+    background-color: var(--bg-deep);
+    border-bottom: 1px solid var(--border);
+    min-height: 0;
+}
+
+.dashboard-canvas {
+    background-color: var(--bg-deep);
+}
+
+.canvas-scroll {
+    background-color: var(--bg-deep);
+}
+
+/* ── Dashboard blocks ────────────────────────────────────────────────────── */
+
+.dashboard-block {
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background-color: var(--bg-mid);
+    padding: 0;
+}
+
+.dashboard-block > * {
+    padding: 0;
+}
+
+/* ── Menu bar ────────────────────────────────────────────────────────────── */
+
+.edmd-menubar {
+    background-color: var(--bg-mid);
+    border-bottom: 1px solid var(--border);
+    padding: 0 4px;
+    min-height: 0;
+}
+
+.menubar-btn {
+    font-size: 0.82em;
+    padding: 3px 10px;
+    border-radius: 0;
+    border: none;
+    background: transparent;
+    background-image: none;
+    box-shadow: none;
+    color: var(--fg);
+    min-height: 0;
+}
+
+.menubar-btn:hover {
+    background-color: var(--accent-hover);
+    color: var(--accent);
+}
+
+.edmd-menu-popover {
+    background-color: var(--bg-mid);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 0;
+}
+
+.menu-box {
+    min-width: 180px;
+}
+
+.menu-item {
+    font-size: 0.82em;
+    padding: 5px 16px;
+    border-radius: 0;
+    border: none;
+    background: transparent;
+    background-image: none;
+    box-shadow: none;
+    color: var(--fg);
+    text-align: left;
+    min-height: 0;
+}
+
+.menu-item:hover {
+    background-color: var(--accent-hover);
+    color: var(--accent);
+}
+
+.menu-check {
+    font-size: 0.82em;
+    padding: 4px 16px;
+    color: var(--fg);
+    background: transparent;
+}
+
+.menu-section-label {
+    font-size: 0.72em;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-dim);
+    padding: 4px 16px 2px 16px;
+}
+
+.menu-sep {
+    margin: 3px 0;
+    color: var(--border);
+}
+
+/* ── About / Plugins dialog ──────────────────────────────────────────────── */
+
+.about-dialog,
+.plugins-dialog {
+    background-color: var(--bg-mid);
+}
+
+.about-title {
+    font-size: 1.0em;
+    font-weight: bold;
+    color: var(--fg);
+}
+
+.about-version {
+    font-size: 0.88em;
+    color: var(--accent);
+    font-weight: bold;
+}
+
+.about-author {
+    font-size: 0.82em;
+    color: var(--fg-dim);
+}
+
+.about-link {
+    font-size: 0.82em;
+    color: var(--accent);
+    padding: 2px 4px;
+}
+
+.about-close {
+    margin-top: 4px;
+    padding: 4px 16px;
+    border-radius: 4px;
+    background-color: var(--bg-deep);
+    border: 1px solid var(--border);
+    color: var(--fg);
+}
+
+.about-close:hover {
+    background-color: var(--accent-hover);
+}
+
+/* ── Preferences window ──────────────────────────────────────────────────── */
+
+.prefs-window {
+    background-color: var(--bg-mid);
+}
+
+.prefs-notebook {
+    background-color: var(--bg-mid);
+}
+
+.prefs-key {
+    font-size: 0.82em;
+    color: var(--fg-dim);
+}
+
+.prefs-note {
+    font-size: 0.78em;
+    color: var(--fg-dim);
+    font-style: italic;
+}
+
+.prefs-restart-warn {
+    font-size: 0.82em;
+    color: var(--amber);
+}
+
+.prefs-btn {
+    padding: 4px 12px;
+    border-radius: 4px;
+    background-color: var(--bg-deep);
+    border: 1px solid var(--border);
+    color: var(--fg);
+}
+
+.prefs-btn:hover {
+    background-color: var(--accent-hover);
+}
+
+.prefs-btn-apply {
+    padding: 4px 12px;
+    border-radius: 4px;
+    background-color: var(--accent);
+    color: #000;
+    font-weight: bold;
+    border: none;
+}
+
+.prefs-btn-apply:hover {
+    background-color: color-mix(in srgb, var(--accent) 80%, white 20%);
+}
