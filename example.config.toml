@@ -180,3 +180,40 @@ MeritEvent       = 1
 InactiveAlert    = 1
 RateAlert        = 1
 InboundScan      = 1
+
+
+# ==============================================================================
+# Data contributions (opt-in)
+# ==============================================================================
+# These sections enable uploading your journal data to community databases.
+# All are opt-in and disabled by default.
+# All require a restart when changed.
+# ==============================================================================
+
+# ── EDDN (Elite Dangerous Data Network) ─────────────────────────────────────
+# Contributes exploration, market, outfitting, and shipyard data to the shared
+# EDDN relay used by EDSM, Inara, and most third-party tools.
+
+[EDDN]
+Enabled    = false
+# UploaderID = ""      # anonymous uploader tag — defaults to your commander name
+# TestMode   = false   # send to /test schemas only (development use)
+
+# ── EDSM (Elite Dangerous Star Map) ─────────────────────────────────────────
+# Uploads your flight log and discoveries to edsm.net.
+# Requires an EDSM account.  Generate your API key at:
+#   https://www.edsm.net/en/settings/api
+
+[EDSM]
+Enabled       = false
+# CommanderName = "YourCmdrName"   # must match your EDSM account name exactly
+# ApiKey        = ""               # from EDSM Settings → API Key
+
+# ── EDAstro ──────────────────────────────────────────────────────────────────
+# Uploads exploration, Odyssey organic scan, and fleet carrier data to edastro.com.
+# Anonymous — no account or API key required.
+
+[EDAstro]
+Enabled             = false
+UploadCarrierEvents = false   # set true to include CarrierStatus / CarrierJumpRequest
+                              # note: this shares your carrier's location with EDAstro

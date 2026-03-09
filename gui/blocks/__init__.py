@@ -2,15 +2,17 @@
 gui/blocks — EDMD dashboard block widgets.
 
 Each block subclasses gui.block_base.BlockWidget and owns its own
-build() and refresh() logic.  EdmdWindow instantiates all five and
+build() and refresh() logic.  EdmdWindow instantiates all blocks and
 calls build() once then refresh() on every relevant gui_queue message.
 """
 
-from gui.blocks.commander    import CommanderBlock
-from gui.blocks.crew_slf     import CrewSlfBlock
-from gui.blocks.missions     import MissionsBlock
+from gui.blocks.commander     import CommanderBlock
+from gui.blocks.crew_slf      import CrewSlfBlock
+from gui.blocks.missions      import MissionsBlock
 from gui.blocks.session_stats import SessionStatsBlock
-from gui.blocks.alerts       import AlertsBlock
+from gui.blocks.alerts        import AlertsBlock
+from gui.blocks.cargo         import CargoBlock
+from gui.blocks.materials     import MaterialsBlock
 
 __all__ = [
     "CommanderBlock",
@@ -18,4 +20,6 @@ __all__ = [
     "MissionsBlock",
     "SessionStatsBlock",
     "AlertsBlock",
+    "CargoBlock",
+    "MaterialsBlock",
 ]

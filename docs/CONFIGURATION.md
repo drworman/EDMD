@@ -136,3 +136,67 @@ Discord.WebhookURL = 'https://discord.com/api/webhooks/...'
 - **Journal path (Windows):** `%USERPROFILE%\Saved Games\Frontier Developments\Elite Dangerous`
 - **Journal path (Linux/Proton):** varies — use `find ~/ -name "Journal*.log"` to locate it.
 - **Network paths:** UNC paths are supported on Windows, e.g. `\\SERVER\Share\Saved Games\...`
+
+---
+
+## Data Contributions (opt-in)
+
+All data contribution features are **opt-in** and disabled by default.  They are configured in their own `[SECTION]` blocks and all require a restart when changed (❌).  Settings can be managed in the **Preferences → Data & Integrations** tab.
+
+---
+
+### `[EDDN]`
+
+Contributes exploration, market, outfitting, and shipyard data to the [Elite Dangerous Data Network](https://eddn.edcd.io) — the shared relay used by EDSM, Inara, and most third-party tools.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Enabled` | `false` | ❌ Enable EDDN uploads |
+| `UploaderID` | `""` | ❌ Anonymous uploader tag shown in EDDN messages — defaults to your commander name if blank |
+| `TestMode` | `false` | ❌ Send to `/test` schemas only (development use) |
+
+---
+
+### `[EDSM]`
+
+Uploads your flight log and discoveries to [edsm.net](https://www.edsm.net).  Requires a free EDSM account.  Generate your API key at **EDSM → Settings → API Key**.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Enabled` | `false` | ❌ Enable EDSM uploads |
+| `CommanderName` | `""` | ❌ Your EDSM commander name — must match your account exactly |
+| `ApiKey` | `""` | ❌ Your EDSM API key |
+
+Events are batched and flushed on session transitions (FSDJump, Docked, LoadGame) to stay well within EDSM's rate limit.  A discard list is fetched from EDSM at startup so only requested events are sent.
+
+---
+
+### `[EDAstro]`
+
+Uploads exploration, Odyssey organic scan, and fleet carrier data to [edastro.com](https://edastro.com).  No account or API key required — uploads are anonymous.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Enabled` | `false` | ❌ Enable EDAstro uploads |
+| `UploadCarrierEvents` | `false` | ❌ Include `CarrierStatus` and `CarrierJumpRequest` events — note that these reveal your carrier's location to EDAstro |
+
+An event-interest list is fetched from EDAstro at startup so only the events EDAstro wants are sent.
+
+---
+
+### Data contributions inside profiles
+
+All three sections can be scoped to a profile like any other setting:
+
+```toml
+[EDP1.EDDN]
+Enabled = true
+
+[EDP1.EDSM]
+Enabled       = true
+CommanderName = "YourCmdrName"
+ApiKey        = "your-api-key-here"
+
+[EDP1.EDAstro]
+Enabled = true
+```

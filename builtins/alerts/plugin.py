@@ -188,6 +188,12 @@ class AlertsPlugin(BasePlugin):
         """Return current alerts list for the GUI block renderer."""
         return list(self.alert_queue)
 
+    def clear_alerts(self) -> None:
+        """Clear all alerts (called by the GUI Clear button)."""
+        self.alert_queue.clear()
+        if self.core.gui_queue:
+            self.core.gui_queue.put(("alerts_update", None))
+
     def opacity_for(self, alert: dict) -> float:
         """Return current display opacity for an alert based on its age."""
         age = time.monotonic() - alert["mono_time"]

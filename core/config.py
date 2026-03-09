@@ -60,6 +60,24 @@ CFG_DEFAULTS_DISCORD = {
     "Identity":        True,
 }
 
+CFG_DEFAULTS_EDDN = {
+    "Enabled":    False,
+    "UploaderID": "",
+    "TestMode":   False,
+}
+
+CFG_DEFAULTS_EDSM = {
+    "Enabled":       False,
+    "CommanderName": "",
+    "ApiKey":        "",
+}
+
+CFG_DEFAULTS_EDASTRO = {
+    "Enabled":             False,
+    "UploadCarrierEvents": False,
+}
+
+
 CFG_DEFAULTS_NOTIFY = {
     "InboundScan":      1,
     "RewardEvent":      2,
@@ -230,6 +248,9 @@ class ConfigManager:
         self.discord_cfg   = self.load_setting("Discord",   CFG_DEFAULTS_DISCORD,  warn)
         self.notify_levels = self.load_setting("LogLevels", CFG_DEFAULTS_NOTIFY,   warn)
         self.gui_cfg       = self.load_setting("GUI",       CFG_DEFAULTS_GUI,      False)
+        self.eddn_cfg      = self.load_setting("EDDN",      CFG_DEFAULTS_EDDN,     False)
+        self.edsm_cfg      = self.load_setting("EDSM",      CFG_DEFAULTS_EDSM,     False)
+        self.edastro_cfg   = self.load_setting("EDAstro",   CFG_DEFAULTS_EDASTRO,  False)
 
     def load_setting(
         self,

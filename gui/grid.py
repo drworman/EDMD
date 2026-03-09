@@ -41,6 +41,8 @@ DEFAULT_LAYOUT = {
     "crew_slf":     {"col": 16, "row": 0,  "width": 8,  "height": 10},
     "missions":     {"col": 0,  "row": 10, "width": 12, "height": 8},
     "alerts":       {"col": 0,  "row": 18, "width": 24, "height": 10},
+    "cargo":        {"col": 16, "row": 10, "width": 8,  "height": 10},
+    "materials":    {"col": 16, "row": 20, "width": 8,  "height": 14},
 }
 
 

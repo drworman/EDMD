@@ -88,6 +88,7 @@ class PreferencesWindow(Gtk.Window):
         self._build_notifications_tab(notebook)
         self._build_discord_tab(notebook)
         self._build_appearance_tab(notebook)
+        self._build_data_tab(notebook)
 
         # Restart-required banner (hidden until a restart-required field changes)
         banner = Gtk.InfoBar()
@@ -354,6 +355,9 @@ class PreferencesWindow(Gtk.Window):
         "Discord":  {"WebhookURL", "UserID", "Identity",
                      "ForumChannel", "ThreadCmdrNames", "Timestamp"},
         "GUI":      {"Theme"},
+        "EDDN":     {"Enabled", "UploaderID", "TestMode"},
+        "EDSM":     {"Enabled", "CommanderName", "ApiKey"},
+        "EDAstro":  {"Enabled", "UploadCarrierEvents"},
     }
 
     def _record(self, section: str, key: str, value) -> None:
@@ -376,6 +380,139 @@ class PreferencesWindow(Gtk.Window):
 
     def _track_gui(self, key: str, value) -> None:
         self._record("GUI", key, value)
+
+    def _track_eddn(self, key: str, value) -> None:
+        self._record("EDDN", key, value)
+
+    def _track_edsm(self, key: str, value) -> None:
+        self._record("EDSM", key, value)
+
+    def _track_edastro(self, key: str, value) -> None:
+        self._record("EDAstro", key, value)
+
+    # ── Data & Integrations tab ───────────────────────────────────────────────
+
+    def _build_data_tab(self, nb: Gtk.Notebook) -> None:
+        box = self._tab(nb, "Data & Integrations")
+
+        note = Gtk.Label(
+            label="These settings require a restart to take effect.  ⚠ will confirm."
+        )
+        note.set_xalign(0.0)
+        note.add_css_class("prefs-note")
+        box.append(note)
+
+        # ── EDDN ─────────────────────────────────────────────────────────────
+        box.append(self._section_label("EDDN  (Elite Dangerous Data Network)"))
+
+        eddn_note = Gtk.Label(
+            label="Contribute exploration, market, and outfitting data to the\n"
+                  "shared EDDN network used by third-party tools and sites."
+        )
+        eddn_note.set_xalign(0.0)
+        eddn_note.add_css_class("prefs-note")
+        box.append(eddn_note)
+
+        eddn_cfg = self._cfg.eddn_cfg
+
+        eddn_sw = Gtk.Switch()
+        eddn_sw.set_active(bool(eddn_cfg.get("Enabled", False)))
+        eddn_sw.set_valign(Gtk.Align.CENTER)
+        eddn_sw.connect("state-set", lambda w, v: self._track_eddn("Enabled", v))
+        box.append(self._row("Enable EDDN", eddn_sw, restart_required=True))
+
+        uploader_entry = Gtk.Entry()
+        uploader_entry.set_text(eddn_cfg.get("UploaderID", ""))
+        uploader_entry.set_hexpand(True)
+        uploader_entry.set_width_chars(24)
+        uploader_entry.set_placeholder_text("defaults to commander name")
+        uploader_entry.connect(
+            "changed", lambda w: self._track_eddn("UploaderID", w.get_text())
+        )
+        box.append(self._row("Uploader ID", uploader_entry, restart_required=True))
+
+        eddn_test_sw = Gtk.Switch()
+        eddn_test_sw.set_active(bool(eddn_cfg.get("TestMode", False)))
+        eddn_test_sw.set_valign(Gtk.Align.CENTER)
+        eddn_test_sw.connect("state-set", lambda w, v: self._track_eddn("TestMode", v))
+        box.append(self._row("Test Mode (sends to /test schemas)", eddn_test_sw,
+                              restart_required=True))
+
+        box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+
+        # ── EDSM ─────────────────────────────────────────────────────────────
+        box.append(self._section_label("EDSM  (Elite Dangerous Star Map)"))
+
+        edsm_note = Gtk.Label(
+            label="Upload your flight log and discoveries to edsm.net.\n"
+                  "Requires an EDSM account.  Generate your API key at:\n"
+                  "https://www.edsm.net/en/settings/api"
+        )
+        edsm_note.set_xalign(0.0)
+        edsm_note.add_css_class("prefs-note")
+        box.append(edsm_note)
+
+        edsm_cfg = self._cfg.edsm_cfg
+
+        edsm_sw = Gtk.Switch()
+        edsm_sw.set_active(bool(edsm_cfg.get("Enabled", False)))
+        edsm_sw.set_valign(Gtk.Align.CENTER)
+        edsm_sw.connect("state-set", lambda w, v: self._track_edsm("Enabled", v))
+        box.append(self._row("Enable EDSM", edsm_sw, restart_required=True))
+
+        cmdr_entry = Gtk.Entry()
+        cmdr_entry.set_text(edsm_cfg.get("CommanderName", ""))
+        cmdr_entry.set_hexpand(True)
+        cmdr_entry.set_width_chars(24)
+        cmdr_entry.set_placeholder_text("your EDSM commander name")
+        cmdr_entry.connect(
+            "changed", lambda w: self._track_edsm("CommanderName", w.get_text())
+        )
+        box.append(self._row("EDSM Commander Name", cmdr_entry, restart_required=True))
+
+        edsm_key_entry = Gtk.Entry()
+        edsm_key_entry.set_text(edsm_cfg.get("ApiKey", ""))
+        edsm_key_entry.set_hexpand(True)
+        edsm_key_entry.set_width_chars(24)
+        edsm_key_entry.set_visibility(False)
+        edsm_key_entry.set_placeholder_text("your EDSM API key")
+        edsm_key_entry.connect(
+            "changed", lambda w: self._track_edsm("ApiKey", w.get_text())
+        )
+        box.append(self._row("EDSM API Key", edsm_key_entry, restart_required=True))
+
+        box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+
+        # ── EDAstro ───────────────────────────────────────────────────────────
+        box.append(self._section_label("EDAstro"))
+
+        edastro_note = Gtk.Label(
+            label="Upload exploration, carrier, and Odyssey data to edastro.com.\n"
+                  "Anonymous — no account or API key required."
+        )
+        edastro_note.set_xalign(0.0)
+        edastro_note.add_css_class("prefs-note")
+        box.append(edastro_note)
+
+        edastro_cfg = self._cfg.edastro_cfg
+
+        edastro_sw = Gtk.Switch()
+        edastro_sw.set_active(bool(edastro_cfg.get("Enabled", False)))
+        edastro_sw.set_valign(Gtk.Align.CENTER)
+        edastro_sw.connect("state-set", lambda w, v: self._track_edastro("Enabled", v))
+        box.append(self._row("Enable EDAstro", edastro_sw, restart_required=True))
+
+        carrier_sw = Gtk.Switch()
+        carrier_sw.set_active(bool(edastro_cfg.get("UploadCarrierEvents", False)))
+        carrier_sw.set_valign(Gtk.Align.CENTER)
+        carrier_sw.connect(
+            "state-set", lambda w, v: self._track_edastro("UploadCarrierEvents", v)
+        )
+        box.append(self._row(
+            "Include Carrier Events  (shares carrier location)",
+            carrier_sw,
+            restart_required=True,
+        ))
 
     # ── Apply & Save ──────────────────────────────────────────────────────────
 

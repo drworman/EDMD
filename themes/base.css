@@ -647,6 +647,13 @@ notebook stack {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
 
+.block-drag-ghost {
+    background: transparent;
+    border: 2px dashed var(--accent);
+    border-radius: 4px;
+    opacity: 0.85;
+}
+
 .block-resizing {
     border-color: var(--accent);
 }
@@ -1056,4 +1063,22 @@ link:hover {
     color: #f5a623;
     font-weight: bold;
     padding: 2px 4px;
+}
+
+/* Alerts block — Clear button */
+.alerts-clear-btn {
+    font-size: 0.76em;
+    padding: 1px 10px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    background: transparent none;
+    color: var(--fg-dim);
+    box-shadow: none;
+    min-height: 0;
+}
+
+.alerts-clear-btn:hover {
+    color: var(--accent);
+    background: var(--accent-hover) none;
+    border-color: var(--accent-dim);
 }

@@ -49,10 +49,14 @@ class BlockWidget:
         self._drag_origin_x = 0.0
         self._drag_origin_y = 0.0
         self._dragging      = False
+        self._drag_ghost: "Gtk.Frame | None" = None   # lightweight ghost overlay
 
         # Resize state
         self._resize_origin_w = 0.0
         self._resize_origin_h = 0.0
+        self._resize_origin_x = 0.0
+        self._resize_origin_y = 0.0
+        self._resize_ghost: "Gtk.Frame | None" = None
 
     # ── Build ─────────────────────────────────────────────────────────────────
 
@@ -135,20 +139,35 @@ class BlockWidget:
         gesture.set_state(Gtk.EventSequenceState.CLAIMED)
         self._dragging = True
         cell = self._grid.cell_for(self._name)
-        x, y, _, _ = self._grid.pixel_rect(cell)
+        x, y, w, h = self._grid.pixel_rect(cell)
         self._drag_origin_x = float(x)
         self._drag_origin_y = float(y)
         if self._header:
             self._header.set_cursor(Gdk.Cursor.new_from_name("grabbing"))
+
+        # Create ghost: an empty frame the same size as the block, placed on
+        # the canvas.  Only this lightweight widget moves during the drag;
+        # the real block stays put until drop.  This eliminates the stutter
+        # caused by re-rendering the block's full widget tree on every
+        # mouse-move event.
+        ghost = Gtk.Frame()
+        ghost.add_css_class("block-drag-ghost")
+        ghost.set_size_request(w, h)
+        self._window._canvas.put(ghost, x, y)
+        ghost.set_visible(True)
+        self._drag_ghost = ghost
+
+        # Dim the real block to indicate it is being moved
         if self._frame:
             self._frame.add_css_class("block-dragging")
 
     def _on_drag_update(self, gesture, offset_x, offset_y):
-        if not self._dragging or self._frame is None:
+        if not self._dragging or self._drag_ghost is None:
             return
+        # Move only the ghost — the real block does not move here
         nx = max(0.0, self._drag_origin_x + offset_x)
         ny = max(0.0, self._drag_origin_y + offset_y)
-        self._window._canvas.move(self._frame, int(nx), int(ny))
+        self._window._canvas.move(self._drag_ghost, int(nx), int(ny))
 
     def _on_drag_end(self, gesture, offset_x, offset_y):
         self._dragging = False
@@ -156,6 +175,13 @@ class BlockWidget:
             self._header.set_cursor(Gdk.Cursor.new_from_name("grab"))
         if self._frame:
             self._frame.remove_css_class("block-dragging")
+
+        # Destroy ghost
+        if self._drag_ghost is not None:
+            self._window._canvas.remove(self._drag_ghost)
+            self._drag_ghost = None
+
+        # Snap and commit the real block to its new position
         final_x = self._drag_origin_x + offset_x
         final_y = self._drag_origin_y + offset_y
         col = self._grid.snap_to_col(final_x)
@@ -181,22 +207,34 @@ class BlockWidget:
     def _on_resize_begin(self, gesture, x, y):
         gesture.set_state(Gtk.EventSequenceState.CLAIMED)
         cell = self._grid.cell_for(self._name)
-        _, _, w, h = self._grid.pixel_rect(cell)
+        bx, by, w, h = self._grid.pixel_rect(cell)
         self._resize_origin_w = float(w)
         self._resize_origin_h = float(h)
+        self._resize_origin_x = float(bx)
+        self._resize_origin_y = float(by)
         if self._frame:
             self._frame.add_css_class("block-resizing")
+        # Ghost overlay anchored at block origin — only the ghost resizes during drag
+        ghost = Gtk.Frame()
+        ghost.add_css_class("block-drag-ghost")
+        ghost.set_size_request(w, h)
+        self._window._canvas.put(ghost, bx, by)
+        ghost.set_visible(True)
+        self._resize_ghost = ghost
 
     def _on_resize_update(self, gesture, offset_x, offset_y):
-        if self._frame is None:
+        if self._resize_ghost is None:
             return
         nw = max(80.0, self._resize_origin_w + offset_x)
         nh = max(40.0, self._resize_origin_h + offset_y)
-        self._frame.set_size_request(int(nw), int(nh))
+        self._resize_ghost.set_size_request(int(nw), int(nh))
 
     def _on_resize_end(self, gesture, offset_x, offset_y):
         if self._frame:
             self._frame.remove_css_class("block-resizing")
+        if self._resize_ghost is not None:
+            self._window._canvas.remove(self._resize_ghost)
+            self._resize_ghost = None
         from gui.grid import ROW_PX
         cw   = self._grid.col_width()
         nw   = max(80.0,  self._resize_origin_w + offset_x)

@@ -32,6 +32,8 @@ from gui.blocks   import (
     MissionsBlock,
     SessionStatsBlock,
     AlertsBlock,
+    CargoBlock,
+    MaterialsBlock,
 )
 
 GLib.set_prgname("edmd")
@@ -44,6 +46,8 @@ _BUILTIN_REGISTRY = [
     ("crew_slf",      CrewSlfBlock,      "Crew / SLF"),
     ("missions",      MissionsBlock,     "Mission Stack"),
     ("alerts",        AlertsBlock,       "Alerts"),
+    ("cargo",         CargoBlock,        "Cargo"),
+    ("materials",     MaterialsBlock,    "Materials"),
 ]
 
 

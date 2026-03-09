@@ -36,6 +36,17 @@ class AlertsBlock(BlockWidget):
             body.append(lbl)
             self._alert_rows.append(lbl)
 
+        # Clear button — pinned below the alert rows
+        clear_btn = Gtk.Button(label="Clear")
+        clear_btn.add_css_class("alerts-clear-btn")
+        clear_btn.set_halign(Gtk.Align.END)
+        clear_btn.set_margin_top(4)
+        clear_btn.connect("clicked", self._on_clear)
+        body.append(clear_btn)
+
+    def _on_clear(self, _btn) -> None:
+        self.core.plugin_call("alerts", "clear_alerts")
+
     def refresh(self) -> None:
         # Pull current alerts from the alerts plugin via CoreAPI
         alerts = self.core.plugin_call("alerts", "get_alerts") or []
