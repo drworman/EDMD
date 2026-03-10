@@ -86,9 +86,6 @@ class CrewSlfPlugin(BasePlugin):
                     emoji="💀", sigil="!! SLF ",
                     timestamp=logtime, loglevel=notify["FighterLost"],
                 )
-                if cfg.pcfg("QuitOnSLFDead"):
-                    from core.journal import _flush_session
-                    _flush_session(cfg)
 
             case "LaunchFighter" if not event.get("PlayerControlled"):
                 state.slf_deployed = True
@@ -161,12 +158,6 @@ class CrewSlfPlugin(BasePlugin):
                         emoji="⚠️", sigil="^  HULL",
                         timestamp=logtime, loglevel=notify["HullEvent"],
                     )
-                    if (
-                        cfg.pcfg("QuitOnLowHull")
-                        and hullhealth <= cfg.pcfg("QuitOnLowHullThreshold", 10)
-                    ):
-                        from core.journal import _flush_session
-                        _flush_session(cfg)
 
             case "CrewAssign":
                 name = event.get("Name")
