@@ -62,9 +62,10 @@ class BlockWidget:
         self._resize_ghost: "Gtk.Frame | None" = None
 
         # Collapse state
-        self._collapsed     = False
-        self._content_box: "Gtk.Box | None" = None   # hidden when collapsed
-        self._header_height = 0                        # cached after first allocation
+        self._collapsed      = False
+        self._section_sep:  "Gtk.Widget | None" = None  # separator below header
+        self._section_body: "Gtk.Box    | None" = None  # inner content box
+        self._header_height  = 0
 
     # ── Build ─────────────────────────────────────────────────────────────────
 
@@ -89,7 +90,6 @@ class BlockWidget:
         content_box.set_hexpand(True)
         content_box.set_vexpand(True)
         outer_box.append(content_box)
-        self._content_box = content_box
 
         # Let subclass populate content_box; this also sets self._header
         self.build(content_box)
@@ -158,15 +158,19 @@ class BlockWidget:
     def _toggle_collapse(self) -> None:
         self._collapsed = not self._collapsed
         show = not self._collapsed
-        if self._content_box:
-            self._content_box.set_visible(show)
+        # Hide only the section body and separator — the header (which is the
+        # first child of panel-section, above the separator) stays visible so
+        # the user can always see the block title and double-click to restore.
+        if self._section_sep:
+            self._section_sep.set_visible(show)
+        if self._section_body:
+            self._section_body.set_visible(show)
         if self._footer:
             self._footer.set_visible(show)
         if self._frame:
             cell = self._grid.cell_for(self._name)
             _, _, w, h = self._grid.pixel_rect(cell)
             if self._collapsed:
-                # Use cached header height; fall back to 26px if not yet measured.
                 hdr_h = self._header_height if self._header_height > 0 else 26
                 self._frame.set_size_request(w, hdr_h + 6)
             else:
@@ -227,6 +231,7 @@ class BlockWidget:
         self._window._canvas.move(self._drag_ghost, int(nx), int(ny))
 
     def _on_drag_end(self, gesture, offset_x, offset_y):
+        was_dragging = self._drag_ghost_created
         self._dragging = False
         self._drag_ghost_created = False
         if self._header:
@@ -239,6 +244,12 @@ class BlockWidget:
             self._window._canvas.remove(self._drag_ghost)
             self._drag_ghost = None
 
+        # If the pointer never moved past the drag threshold (e.g. a click or
+        # double-click), skip the snap/commit entirely.  This prevents drag-end
+        # from overwriting the frame size that _toggle_collapse just set.
+        if not was_dragging:
+            return
+
         # Snap and commit the real block to its new position
         final_x = self._drag_origin_x + offset_x
         final_y = self._drag_origin_y + offset_y
@@ -249,7 +260,8 @@ class BlockWidget:
         x, y, w, h = self._grid.pixel_rect(cell)
         if self._frame:
             self._window._canvas.move(self._frame, x, y)
-            self._frame.set_size_request(w, h)
+            if not self._collapsed:
+                self._frame.set_size_request(w, h)
         self._grid.save()
 
     # ── Resize (⤡ handle in footer) ───────────────────────────────────────────
@@ -321,8 +333,13 @@ class BlockWidget:
         outer.set_vexpand(True)
         parent.append(outer)
         self._root = outer
-        # First child of outer is the header label — use it as drag target
-        self._header = outer.get_first_child()
+        # First child of outer is the header label — use it as drag target.
+        # Second child is the separator; third is the inner content box.
+        # We store all three so _toggle_collapse can hide sep+body while
+        # keeping the header visible.
+        self._header       = outer.get_first_child()
+        self._section_sep  = self._header.get_next_sibling() if self._header else None
+        self._section_body = inner
         return inner
 
     # ── Visibility ────────────────────────────────────────────────────────────

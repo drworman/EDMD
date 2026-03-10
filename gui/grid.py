@@ -36,13 +36,17 @@ MIN_H    = 1
 # Default block layout — used when layout.json is absent or malformed.
 # Heights doubled from original values to compensate for halved ROW_PX.
 DEFAULT_LAYOUT = {
+    # Row 0 — identity/status strip (3 equal blocks, full 24 cols)
     "commander":    {"col": 0,  "row": 0,  "width": 8,  "height": 10},
     "session_stats":{"col": 8,  "row": 0,  "width": 8,  "height": 10},
     "crew_slf":     {"col": 16, "row": 0,  "width": 8,  "height": 10},
-    "missions":     {"col": 0,  "row": 10, "width": 12, "height": 8},
-    "alerts":       {"col": 0,  "row": 18, "width": 24, "height": 10},
-    "cargo":        {"col": 16, "row": 10, "width": 8,  "height": 10},
-    "materials":    {"col": 16, "row": 20, "width": 8,  "height": 14},
+    # Row 10 — mission/cargo/materials (10+6+8 = 24 cols, no gap, no overlap)
+    # materials at width=8 (~424px at 1280) exceeds the wide-layout threshold.
+    "missions":     {"col": 0,  "row": 10, "width": 10, "height": 10},
+    "cargo":        {"col": 10, "row": 10, "width": 6,  "height": 10},
+    "materials":    {"col": 16, "row": 10, "width": 8,  "height": 10},
+    # Row 20 — alerts full width
+    "alerts":       {"col": 0,  "row": 20, "width": 24, "height": 8},
 }
 
 
