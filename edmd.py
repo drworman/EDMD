@@ -343,6 +343,50 @@ if __name__ == "__main__":
         )
         status_thread.start()
 
+        # ── Suppress known-unfixable GTK progress bar sizing warning ─────────
+        # "GtkGizmo (progress) reported min width -2" fires on every window
+        # close when a ProgressBar widget is present.  This is a GTK internal
+        # bug with no application-level fix.
+        #
+        # GTK emits this via g_log() directly to fd 2 (C-level stderr) so
+        # GLib.log_set_handler from Python does NOT intercept it.  We redirect
+        # fd 2 through a pipe whose pump thread pattern-matches and drops the
+        # offending line before writing everything else to the original stderr.
+        # In trace mode the filter is never installed so the line still shows.
+        if not trace_mode:
+            try:
+                import os as _os, threading as _th
+
+                _orig_fd   = _os.dup(2)                     # save real stderr
+                _r, _w     = _os.pipe()
+                _os.dup2(_w, 2)                             # stderr → pipe write end
+                _os.close(_w)
+                _orig_out  = _os.fdopen(_orig_fd, "wb", buffering=0)
+                _DROP      = (b"GtkGizmo", b"progress", b"min width")
+
+                def _pump():
+                    buf = b""
+                    with _os.fdopen(_r, "rb", buffering=0) as pipe:
+                        while True:
+                            chunk = pipe.read(256)
+                            if not chunk:
+                                break
+                            buf += chunk
+                            while b"\n" in buf:
+                                line, buf = buf.split(b"\n", 1)
+                                line += b"\n"
+                                if not all(p in line for p in _DROP):
+                                    _orig_out.write(line)
+                                    _orig_out.flush()
+                    if buf and not all(p in buf for p in _DROP):
+                        _orig_out.write(buf)
+                        _orig_out.flush()
+
+                _th.Thread(target=_pump, daemon=True,
+                           name="stderr-filter").start()
+            except Exception:
+                pass  # non-fatal
+
         app = EdmdApp(core, PROGRAM, VERSION)
         app.run(None)
 

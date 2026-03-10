@@ -97,30 +97,53 @@ FIGHTER_LOADOUT_NAMES = {
 # raw internal identifiers (e.g. "CobraMkIII", "Type_9_Military").
 #
 # normalise_ship_name() is the single point of truth for ship display names.
-# Every place in EDMD that resolves a ship name must call this function.
-# Keys are lowercase; the function lowercases its input before lookup.
-
+# Keys are ALWAYS lowercased; values are the canonical display strings drawn
+# from Inara (https://inara.cz/elite/ships/) as of March 2026.
+#
+# Rules:
+#   • "Mk II / III / IV / V" — no period after Mk, Roman numerals uppercase
+#   • For ships with no rank prefix in the display name (Corsair, Dolphin…)
+#     keep it short.  "Imperial" in the display name only for ships that
+#     require Imperial rank (Cutter, Clipper, Courier, Eagle).
+#   • Every plausible journal emission variant gets its own key so we never
+#     fall back to .title() for a known ship.
 _SHIP_NAMES: dict[str, str] = {
     # ── Faulcon DeLacy ────────────────────────────────────────────────────────
-    "sidewinder":               "Sidewinder",
-    "sidewindermkii":           "Sidewinder Mk. II",
-    "eagle":                    "Eagle",
-    "eaglemkii":                "Eagle Mk. II",
-    "cobramkiii":               "Cobra Mk. III",
-    "cobramkiv":                "Cobra Mk. IV",
-    "cobra mk. iii":            "Cobra Mk. III",
-    "cobra mk. iv":             "Cobra Mk. IV",
-    "cobra mkiii":              "Cobra Mk. III",
-    "cobra mkiv":               "Cobra Mk. IV",
+    "sidewinder":               "Sidewinder Mk I",
+    "sidewindermki":            "Sidewinder Mk I",
+    "sidewinder mk i":          "Sidewinder Mk I",
+    "sidewindermkii":           "Sidewinder Mk II",
+    "sidewinder mk ii":         "Sidewinder Mk II",
+    "eagle":                    "Eagle Mk II",
+    "eaglemkii":                "Eagle Mk II",
+    "eagle mk ii":              "Eagle Mk II",
+    "cobramkiii":               "Cobra Mk III",
+    "cobra mkiii":              "Cobra Mk III",
+    "cobra mk iii":             "Cobra Mk III",
+    "cobra mk. iii":            "Cobra Mk III",
+    "cobramkiv":                "Cobra Mk IV",
+    "cobra mkiv":               "Cobra Mk IV",
+    "cobra mk iv":              "Cobra Mk IV",
+    "cobra mk. iv":             "Cobra Mk IV",
+    "cobramkv":                 "Cobra Mk V",
+    "cobra mkv":                "Cobra Mk V",
+    "cobra mk v":               "Cobra Mk V",
+    "cobra mk. v":              "Cobra Mk V",
     "python":                   "Python",
-    "pythonmkii":               "Python Mk. II",
+    "pythonmkii":               "Python Mk II",
+    "python mkii":              "Python Mk II",
+    "python mk ii":             "Python Mk II",
+    "python mk. ii":            "Python Mk II",
+    "python_nx":                "Python Mk II",    # confirmed journal internal
     "anaconda":                 "Anaconda",
     "mamba":                    "Mamba",
+    "combat_multirole":         "Mamba",
     # ── Lakon Spaceways ───────────────────────────────────────────────────────
     "adder":                    "Adder",
     "asp":                      "Asp Explorer",
     "asp explorer":             "Asp Explorer",
     "aspscout":                 "Asp Scout",
+    "asp_sa":                   "Asp Scout",
     "asp scout":                "Asp Scout",
     "hauler":                   "Hauler",
     "diamondbackscout":         "Diamondback Scout",
@@ -128,27 +151,36 @@ _SHIP_NAMES: dict[str, str] = {
     "diamondbackxl":            "Diamondback Explorer",
     "diamondback explorer":     "Diamondback Explorer",
     "type6":                    "Type-6 Transporter",
-    "type-6 transporter":       "Type-6 Transporter",
     "type6transporter":         "Type-6 Transporter",
+    "type-6 transporter":       "Type-6 Transporter",
     "type7":                    "Type-7 Transporter",
-    "type-7 transporter":       "Type-7 Transporter",
     "type7transporter":         "Type-7 Transporter",
+    "type-7 transporter":       "Type-7 Transporter",
+    "type8":                    "Type-8 Transporter",   # confirmed from journal
+    "type8transporter":         "Type-8 Transporter",
+    "type-8 transporter":       "Type-8 Transporter",
     "type9":                    "Type-9 Heavy",
-    "type-9 heavy":             "Type-9 Heavy",
     "type9heavy":               "Type-9 Heavy",
+    "type-9 heavy":             "Type-9 Heavy",
     "type10":                   "Type-10 Defender",
-    "type-10 defender":         "Type-10 Defender",
     "type10defender":           "Type-10 Defender",
-    "type_9_military":          "Type-10 Defender",
-    "krait_mkii":               "Krait Mk. II",
-    "krait mkii":               "Krait Mk. II",
-    "krait mk. ii":             "Krait Mk. II",
-    "kraitmkii":                "Krait Mk. II",
+    "type-10 defender":         "Type-10 Defender",
+    "type9_military":           "Type-10 Defender",    # confirmed from Shipyard.json
+    "type_9_military":          "Type-10 Defender",    # defensive variant
+    "lakonminer":               "Type-11 Prospector",  # confirmed from Shipyard.json
+    "type11":                   "Type-11 Prospector",  # defensive alias
+    "type11prospector":         "Type-11 Prospector",
+    "type-11 prospector":       "Type-11 Prospector",
+    "krait_mkii":               "Krait Mk II",
+    "kraitmkii":                "Krait Mk II",
+    "krait mkii":               "Krait Mk II",
+    "krait mk ii":              "Krait Mk II",
+    "krait mk. ii":             "Krait Mk II",
     "krait_light":              "Krait Phantom",
     "krait light":              "Krait Phantom",
     "krait phantom":            "Krait Phantom",
-    "manowarinterdictor":       "Mandalay",
     "mandalay":                 "Mandalay",
+    "manowarinterdictor":       "Mandalay",            # legacy internal name
     # ── Saud Kruger ───────────────────────────────────────────────────────────
     "belugaliner":              "Beluga Liner",
     "beluga liner":             "Beluga Liner",
@@ -156,11 +188,13 @@ _SHIP_NAMES: dict[str, str] = {
     "dolphin":                  "Dolphin",
     "orca":                     "Orca",
     # ── Core Dynamics ─────────────────────────────────────────────────────────
-    "viper":                    "Viper Mk. III",
-    "vipermkiii":               "Viper Mk. III",
-    "viper mk. iii":            "Viper Mk. III",
-    "vipermkiv":                "Viper Mk. IV",
-    "viper mk. iv":             "Viper Mk. IV",
+    "viper":                    "Viper Mk III",
+    "vipermkiii":               "Viper Mk III",
+    "viper mk iii":             "Viper Mk III",
+    "viper mk. iii":            "Viper Mk III",
+    "vipermkiv":                "Viper Mk IV",
+    "viper mk iv":              "Viper Mk IV",
+    "viper mk. iv":             "Viper Mk IV",
     "vulture":                  "Vulture",
     "federation_dropship":      "Federal Dropship",
     "federaldropship":          "Federal Dropship",
@@ -174,6 +208,14 @@ _SHIP_NAMES: dict[str, str] = {
     "federation_corvette":      "Federal Corvette",
     "federalcorvette":          "Federal Corvette",
     "federal corvette":         "Federal Corvette",
+    # ── Kestrel Mk II (Core Dynamics, 2026) ──────────────────────────────────
+    "smallcombat01_nx":         "Kestrel Mk II",    # confirmed from Shipyard.json
+    "kestrel":                  "Kestrel Mk II",    # defensive alias
+    "kestrel_mkii":             "Kestrel Mk II",
+    "kestrelmkii":              "Kestrel Mk II",
+    "kestrel mkii":             "Kestrel Mk II",
+    "kestrel mk ii":            "Kestrel Mk II",
+    "kestrel mk. ii":           "Kestrel Mk II",
     # ── Gutamaya ─────────────────────────────────────────────────────────────
     "empire_eagle":             "Imperial Eagle",
     "imperialeagle":            "Imperial Eagle",
@@ -185,29 +227,44 @@ _SHIP_NAMES: dict[str, str] = {
     "imperialclipper":          "Imperial Clipper",
     "imperial clipper":         "Imperial Clipper",
     "empire_fighter":           "Imperial Fighter",
+    "imperial_fighter":         "Imperial Fighter",
     "imperial fighter":         "Imperial Fighter",
     "cutter":                   "Imperial Cutter",
     "imperialcutter":           "Imperial Cutter",
     "imperial cutter":          "Imperial Cutter",
+    # ── Corsair (Gutamaya, 2025) — NOT "Imperial Corsair" ────────────────────
+    "empire_corsair":           "Corsair",
+    "imperialcorsair":          "Corsair",     # defensive alias
+    "imperial corsair":         "Corsair",     # defensive alias
+    "corsair":                  "Corsair",
     # ── Alliance / Crusader ───────────────────────────────────────────────────
     "typex":                    "Alliance Chieftain",
-    "alliance chieftain":       "Alliance Chieftain",
     "alliancechieftain":        "Alliance Chieftain",
+    "alliance chieftain":       "Alliance Chieftain",
     "typex_2":                  "Alliance Crusader",
-    "alliance crusader":        "Alliance Crusader",
     "alliancecrusader":         "Alliance Crusader",
+    "alliance crusader":        "Alliance Crusader",
     "typex_3":                  "Alliance Challenger",
-    "alliance challenger":      "Alliance Challenger",
     "alliancechallenger":       "Alliance Challenger",
+    "alliance challenger":      "Alliance Challenger",
     # ── Zorgon Peterson ───────────────────────────────────────────────────────
     "ferdelance":               "Fer-de-Lance",
     "fer-de-lance":             "Fer-de-Lance",
     "fer de lance":             "Fer-de-Lance",
-    "asp_sa":                   "Asp Scout",
     "keelback":                 "Keelback",
-    # ── Misc / Rare ───────────────────────────────────────────────────────────
-    "independant_trader":       "Keelback",
-    "imperial_fighter":         "Imperial Fighter",
+    "independant_trader":       "Keelback",    # legacy internal name
+    # ── Panther Clipper Mk II (Zorgon Peterson, 2025) ─────────────────────────
+    "panthermkii":              "Panther Clipper Mk II",   # confirmed from Shipyard.json
+    "pantherclippermkii":       "Panther Clipper Mk II",
+    "panther_clipper_mkii":     "Panther Clipper Mk II",
+    "panther clipper mk ii":    "Panther Clipper Mk II",
+    "panther clipper mkii":     "Panther Clipper Mk II",
+    "panther clipper mk. ii":   "Panther Clipper Mk II",
+    # ── Caspian Explorer (Lakon, 2025) ────────────────────────────────────────
+    "caspian":                  "Caspian Explorer",
+    "caspianexplorer":          "Caspian Explorer",
+    "caspian explorer":         "Caspian Explorer",
+    # ── SRV / fighters / misc ─────────────────────────────────────────────────
     "independent_fighter":      "F63 Condor",
     "federation_fighter":       "F/A-26 Strike",
     "gdn_hybrid_fighter_v1":    "Trident",
@@ -215,29 +272,37 @@ _SHIP_NAMES: dict[str, str] = {
     "gdn_hybrid_fighter_v3":    "Lancer",
     "testbuggy":                "SRV",
     "scarab":                   "SRV",
-    "combat_multirole":         "Mamba",
 }
+
+import re as _re
+# Matches Roman numeral tokens after "Mk " that were mangled by .title()
+# e.g. "Iv" → "IV", "Iii" → "III", "Xlii" → "XLII"
+_MK_ROMAN_RE = _re.compile(
+    r'\bMk\s+([IVXivx][IVXivx]*)\b'
+)
 
 
 def normalise_ship_name(raw: str | None) -> str | None:
-    """Return the correctly-capitalised display name for a ship.
+    """Return the correctly-capitalised display name for a ship type string.
 
-    Accepts both internal journal identifiers (e.g. ``"adder"``,
-    ``"CobraMkIII"``) and pre-localised strings that the game sometimes
-    sends in lowercase (e.g. ``"eagle"``).
+    Accepts both internal journal identifiers (e.g. ``"type8"``, ``"krait_mkii"``)
+    and pre-localised strings the game sometimes sends (e.g. ``"Cobra Mk IV"``).
 
-    Falls back to ``str.title()`` for names not in the correction map so
-    future or unknown ships still get reasonable capitalisation.
+    Falls back to a title-cased string for completely unknown ships, with
+    Roman numerals after "Mk" kept properly uppercase.
 
-    Returns ``None`` if ``raw`` is ``None`` or empty.
+    Returns ``None`` if *raw* is ``None`` or empty.
     """
     if not raw:
         return None
     key = raw.strip().lower()
     if key in _SHIP_NAMES:
         return _SHIP_NAMES[key]
-    # Not in map — clean up internal underscores/dots and title-case
-    return raw.replace("_", " ").strip().title()
+    # Not in map — clean up and title-case, then fix Roman numerals after "Mk"
+    candidate = raw.replace("_", " ").strip().title()
+    candidate = _MK_ROMAN_RE.sub(lambda m: "Mk " + m.group(1).upper(), candidate)
+    return candidate
+
 
 
 RANK_NAMES = [

@@ -42,7 +42,29 @@ class CommanderBlock(BlockWidget):
 
         body = self._build_section(parent, title_widget=hdr_outer)
 
-        # ── Ambient rows — identity, location, powerplay ──────────────────────
+        # ── Vitals strip — highest urgency; shown first ───────────────────────
+        # Shields | Hull
+        row_sh = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        row_sh.add_css_class("data-row")
+        key_sh = self.make_label("Shields | Hull", css_class="data-key")
+        key_sh.set_hexpand(False)
+        row_sh.append(key_sh)
+        self._cmdr_health = self.make_label("— | —", css_class="data-value")
+        self._cmdr_health.set_hexpand(True)
+        self._cmdr_health.set_xalign(1.0)
+        row_sh.append(self._cmdr_health)
+        body.append(row_sh)
+
+        # Fuel | duration estimate
+        row_fu, self._cmdr_fuel = self.make_row("Fuel")
+        body.append(row_fu)
+
+        # ── Separator — vitals above, ambient context below ───────────────────
+        vitals_sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        vitals_sep.add_css_class("vitals-sep")
+        body.append(vitals_sep)
+
+        # ── Ambient rows — location and identity context ──────────────────────
         for lbl_text, attr in [
             ("Mode",        "_cmdr_mode"),
             ("Combat Rank", "_cmdr_rank"),
@@ -66,28 +88,6 @@ class CommanderBlock(BlockWidget):
         bar_box.append(self._pp_rank_bar)
         self._pp_rank_bar.set_hexpand(True)
         body.append(bar_box)
-
-        # ── Vitals separator — visual break between ambient and live metrics ──
-        vitals_sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-        vitals_sep.add_css_class("vitals-sep")
-        body.append(vitals_sep)
-
-        # ── Vitals strip — combat-priority first, then fuel ───────────────────
-        # Shields | Hull
-        row_sh = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        row_sh.add_css_class("data-row")
-        key_sh = self.make_label("Shields | Hull", css_class="data-key")
-        key_sh.set_hexpand(False)
-        row_sh.append(key_sh)
-        self._cmdr_health = self.make_label("— | —", css_class="data-value")
-        self._cmdr_health.set_hexpand(True)
-        self._cmdr_health.set_xalign(1.0)
-        row_sh.append(self._cmdr_health)
-        body.append(row_sh)
-
-        # Fuel | duration estimate
-        row_fu, self._cmdr_fuel = self.make_row("Fuel")
-        body.append(row_fu)
 
     def refresh(self) -> None:
         s = self.state

@@ -1,51 +1,48 @@
 """
 builtins/assets/plugin.py — Commander assets inventory.
 
-Tracks four asset categories sourced entirely from the journal and companion
-JSON files in the journal directory:
+Tracks four asset categories sourced from the journal:
 
-  Wallet    — credit balance (Status.json, updated on every Status event)
-  Ships     — current ship + stored ships (StoredShips journal event)
-  Modules   — modules stored away from any ship (StoredModules journal event)
-Data availability notes
------------------------
-• Balance        : live — Status.json is written by the game every ~few seconds.
-• Current ship   : live — Loadout fires on every login and ship change.
-• Stored ships   : stale — StoredShips only fires when the player opens a
-                   shipyard.  The list is accurate at that moment but does not
-                   update until the player visits a shipyard again.
-• Stored modules : stale — StoredModules only fires when the player opens
-                   outfitting.  Same caveat as stored ships.
+  Wallet    — credit balance (Status.json, live)
+  Ships     — current ship (Loadout event) + stored ships (StoredShips event)
+  Modules   — modules stored away from any ship (StoredModules event)
 
-Note: Odyssey ShipLocker inventory has moved to builtins/engineering/plugin.py.
+Startup strategy
+----------------
+On load the plugin:
+  1. Restores the last-known ship/module lists from plugin storage (data.json).
+  2. Scans the last SCAN_JOURNALS journal files (newest first) for the most
+     recent StoredShips and StoredModules events, overwriting storage if found.
+  3. Falls back to empty lists if neither source has data.
 
-State stored on MonitorState (all added via hasattr guard in on_load):
+This means the fleet list is always populated from the most recent journal data
+found on disk, not just events seen in the current session.
+
+Note: Odyssey ShipLocker inventory is in builtins/engineering/plugin.py.
+
+State stored on MonitorState (added via hasattr guard in on_load):
     assets_balance         float   — current credit balance
-    assets_current_ship    dict    — {type, name, ident, system, hull, value}
-    assets_stored_ships    list    — [{type_display, name, system, value, hot}]
-    assets_stored_modules  list    — [{name_display, system, mass, value, hot}]
+    assets_current_ship    dict    — {_key, type, type_display, name, ident,
+                                      system, value, hull}
+    assets_stored_ships    list    — [{_key, type, type_display, name, ident,
+                                        system, value, hot}]
+    assets_stored_modules  list    — [{_key, name_internal, name_display,
+                                        slot, system, mass, value, hot}]
 
-CAPI note: when FDev CAPI is integrated, stored ships and modules will be
-sourced from /fleetcarrier and /profile endpoints rather than relying on
-stale journal snapshots.  The state schema is intentionally forward-compatible.
+CAPI note: when FDev CAPI is integrated, stored ships and modules will come
+from /profile.  The state schema is forward-compatible.
 """
 
+
 import json
+import threading
 from pathlib import Path
 
 from core.plugin_loader import BasePlugin
 from core.state import normalise_ship_name
 
-try:
-    import gi
-    gi.require_version("Gtk", "4.0")
-    from gi.repository import Gtk
-    _GTK = True
-except Exception:
-    _GTK = False
-
-if _GTK:
-    from gui.block_base import BlockWidget
+# How many journal files to scan backwards for StoredShips/StoredModules
+SCAN_JOURNALS = 10
 
 
 # ── Module name normalisation ─────────────────────────────────────────────────
@@ -208,295 +205,6 @@ def normalise_module_name(internal: str) -> str:
     return f"{type_name}{suffix_part}"
 
 
-# ── Block widget ──────────────────────────────────────────────────────────────
-
-_TABS = [
-    ("wallet",  "Wallet"),
-    ("ships",   "Ships"),
-    ("modules", "Modules"),
-]
-
-WIDE_THRESHOLD = 380
-
-
-if _GTK:
-    class AssetsBlock(BlockWidget):
-        BLOCK_TITLE = "ASSETS"
-        BLOCK_CSS   = "assets-block"
-
-        def build(self, parent: Gtk.Box) -> None:
-            body = self._build_section(parent)
-            body.set_spacing(0)
-
-            self._layout_stack = Gtk.Stack()
-            self._layout_stack.set_transition_type(Gtk.StackTransitionType.NONE)
-            self._layout_stack.set_vexpand(True)
-            self._layout_stack.set_hexpand(True)
-            body.append(self._layout_stack)
-
-            self._tab_btns:   dict[str, Gtk.Button] = {}
-            self._active_tab: str = "wallet"
-
-            # Each section: {list_box, empty_lbl, rows: dict}
-            # rows keyed differently per tab:
-            #   wallet  — not used (static labels)
-            #   ships   — keyed by ship id string
-            #   modules — keyed by (system, name)
-            self._sections: dict[str, dict] = {}
-
-            self._build_tabbed_layout()
-
-            self._layout_stack.set_visible_child_name("tabbed")
-            self._current_layout = "tabbed"
-
-        # ── Tabbed layout ─────────────────────────────────────────────────────
-
-        def _build_tabbed_layout(self) -> None:
-            page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-            page.set_vexpand(True)
-
-            tab_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-            tab_bar.add_css_class("mat-tab-bar")
-            page.append(tab_bar)
-            page.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
-
-            stack = Gtk.Stack()
-            stack.set_transition_type(Gtk.StackTransitionType.NONE)
-            stack.set_vexpand(True)
-            stack.set_hexpand(True)
-            page.append(stack)
-            self._tab_stack = stack
-
-            for cat, label in _TABS:
-                btn = Gtk.Button()
-                btn.add_css_class("mat-tab-btn")
-                btn.set_hexpand(True)
-                btn.set_can_focus(False)
-                tab_bar.append(btn)
-
-                lbl = Gtk.Label(label=label)
-                lbl.add_css_class("mat-tab-label")
-                btn.set_child(lbl)
-                btn.connect("clicked", self._on_tab_click, cat)
-                self._tab_btns[cat] = btn
-
-                if cat == "wallet":
-                    tab_page = self._build_wallet_tab()
-                else:
-                    scroll, list_box, empty_lbl = self._make_section_scroll()
-                    self._sections[cat] = {
-                        "list_box":  list_box,
-                        "empty_lbl": empty_lbl,
-                        "rows":      {},
-                    }
-                    tab_page = scroll
-
-                stack.add_named(tab_page, cat)
-
-            self._set_active_tab("wallet")
-            self._layout_stack.add_named(page, "tabbed")
-
-        def _build_wallet_tab(self) -> Gtk.Widget:
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-            box.set_margin_top(6)
-            box.set_margin_start(6)
-            box.set_margin_end(6)
-
-            # Primary credit balance — large display
-            bal_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-            bal_key = self.make_label("Credits", css_class="data-key")
-            self._balance_lbl = self.make_label("—", css_class="data-value")
-            self._balance_lbl.set_hexpand(True)
-            self._balance_lbl.set_xalign(1.0)
-            bal_row.append(bal_key)
-            bal_row.append(self._balance_lbl)
-            box.append(bal_row)
-
-            box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
-
-            # Ship count summary
-            sc_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-            sc_key = self.make_label("Ships owned", css_class="data-key")
-            self._ship_count_lbl = self.make_label("—", css_class="data-value")
-            self._ship_count_lbl.set_hexpand(True)
-            self._ship_count_lbl.set_xalign(1.0)
-            sc_row.append(sc_key)
-            sc_row.append(self._ship_count_lbl)
-            box.append(sc_row)
-
-            # Stored modules count
-            sm_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-            sm_key = self.make_label("Stored modules", css_class="data-key")
-            self._mod_count_lbl = self.make_label("—", css_class="data-value")
-            self._mod_count_lbl.set_hexpand(True)
-            self._mod_count_lbl.set_xalign(1.0)
-            sm_row.append(sm_key)
-            sm_row.append(self._mod_count_lbl)
-            box.append(sm_row)
-
-            return box
-
-        def _make_section_scroll(self):
-            scroll = Gtk.ScrolledWindow()
-            scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-            scroll.set_vexpand(True)
-            scroll.add_css_class("mat-tab-scroll")
-
-            list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-            list_box.set_vexpand(True)
-            list_box.set_margin_end(12)
-            scroll.set_child(list_box)
-
-            empty_lbl = Gtk.Label(label="— none —")
-            empty_lbl.add_css_class("data-key")
-            empty_lbl.set_xalign(0.5)
-            empty_lbl.set_margin_top(6)
-            empty_lbl.set_margin_bottom(4)
-            list_box.append(empty_lbl)
-
-            return scroll, list_box, empty_lbl
-
-        # ── Tab switching ─────────────────────────────────────────────────────
-
-        def _on_tab_click(self, _btn, cat: str) -> None:
-            self._set_active_tab(cat)
-
-        def _set_active_tab(self, cat: str) -> None:
-            self._active_tab = cat
-            self._tab_stack.set_visible_child_name(cat)
-            for key, btn in self._tab_btns.items():
-                if key == cat:
-                    btn.add_css_class("mat-tab-active")
-                else:
-                    btn.remove_css_class("mat-tab-active")
-
-        # ── on_resize ─────────────────────────────────────────────────────────
-
-        def on_resize(self, w: int, h: int) -> None:
-            super().on_resize(w, h)
-
-        # ── Refresh ───────────────────────────────────────────────────────────
-
-        def refresh(self) -> None:
-            state = self.core.state
-
-            # Wallet tab
-            bal = getattr(state, "assets_balance", None)
-            self._balance_lbl.set_label(
-                self.fmt_credits(bal) if bal is not None else "—"
-            )
-
-            stored_ships   = getattr(state, "assets_stored_ships",   [])
-            current_ship   = getattr(state, "assets_current_ship",   None)
-            stored_modules = getattr(state, "assets_stored_modules", [])
-            all_ships = ([current_ship] if current_ship else []) + stored_ships
-            self._ship_count_lbl.set_label(str(len(all_ships)) if all_ships else "—")
-
-            self._mod_count_lbl.set_label(
-                str(len(stored_modules)) if stored_modules else "—"
-            )
-
-            # Ships tab
-            self._refresh_ships(all_ships)
-
-            # Modules tab
-            self._refresh_modules(stored_modules)
-
-        def _refresh_ships(self, ships: list) -> None:
-            sec = self._sections.get("ships")
-            if sec is None:
-                return
-            list_box  = sec["list_box"]
-            empty_lbl = sec["empty_lbl"]
-            rows      = sec["rows"]
-
-            seen = set()
-            for ship in ships:
-                key = ship.get("_key", ship.get("name", "") + ship.get("system", ""))
-                seen.add(key)
-                name_display = ship.get("type_display", "Unknown")
-                if ship.get("name"):
-                    name_display = f"{ship['name']} ({ship.get('type_display', '')})"
-                system = ship.get("system", "—")
-                is_current = ship.get("current", False)
-                tag = "  ★" if is_current else ""
-                line1 = name_display + tag
-                line2 = system
-
-                if key in rows:
-                    n_lbl, s_lbl = rows[key]
-                    n_lbl.set_label(line1)
-                    s_lbl.set_label(line2)
-                else:
-                    row_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
-                    row_box.set_margin_top(2)
-                    row_box.set_margin_bottom(2)
-                    row_box.set_margin_start(4)
-                    n_lbl = self.make_label(line1, css_class="data-value")
-                    n_lbl.set_wrap(False)
-                    n_lbl.set_ellipsize(3)  # PANGO_ELLIPSIZE_END
-                    s_lbl = self.make_label(line2, css_class="data-key")
-                    s_lbl.set_wrap(False)
-                    s_lbl.set_ellipsize(3)
-                    row_box.append(n_lbl)
-                    row_box.append(s_lbl)
-                    list_box.append(row_box)
-                    rows[key] = (n_lbl, s_lbl)
-
-            # Remove stale rows
-            for key in list(rows.keys()):
-                if key not in seen:
-                    n_lbl, _ = rows.pop(key)
-                    parent = n_lbl.get_parent()
-                    if parent:
-                        list_box.remove(parent)
-
-            empty_lbl.set_visible(len(seen) == 0)
-
-        def _refresh_modules(self, modules: list) -> None:
-            sec = self._sections.get("modules")
-            if sec is None:
-                return
-            list_box  = sec["list_box"]
-            empty_lbl = sec["empty_lbl"]
-            rows      = sec["rows"]
-
-            seen = set()
-            for mod in modules:
-                key = mod.get("_key", mod.get("name_display", "") + mod.get("system", ""))
-                seen.add(key)
-                name_display = mod.get("name_display", "Unknown")
-                system       = mod.get("system", "—")
-
-                if key in rows:
-                    n_lbl, s_lbl = rows[key]
-                    n_lbl.set_label(name_display)
-                    s_lbl.set_label(system)
-                else:
-                    row_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
-                    row_box.set_margin_top(2)
-                    row_box.set_margin_bottom(2)
-                    row_box.set_margin_start(4)
-                    n_lbl = self.make_label(name_display, css_class="data-value")
-                    n_lbl.set_ellipsize(3)
-                    s_lbl = self.make_label(system, css_class="data-key")
-                    s_lbl.set_ellipsize(3)
-                    row_box.append(n_lbl)
-                    row_box.append(s_lbl)
-                    list_box.append(row_box)
-                    rows[key] = (n_lbl, s_lbl)
-
-            for key in list(rows.keys()):
-                if key not in seen:
-                    n_lbl, _ = rows.pop(key)
-                    parent = n_lbl.get_parent()
-                    if parent:
-                        list_box.remove(parent)
-
-            empty_lbl.set_visible(len(seen) == 0)
-
-
-
 # ── Plugin ────────────────────────────────────────────────────────────────────
 
 class AssetsPlugin(BasePlugin):
@@ -514,33 +222,270 @@ class AssetsPlugin(BasePlugin):
         "StoredShips",
         # Modules
         "StoredModules",
+        # Fleet carrier
+        "CarrierStats",
+        "CarrierJump",
+        "CarrierFinance",
         # Session boundaries
         "LoadGame",
     ]
 
-    BLOCK_WIDGET_CLASS = AssetsBlock if _GTK else None
 
     def on_load(self, core) -> None:
         super().on_load(core)
-        if _GTK:
-            core.register_block(self, priority=55)
-
         s = core.state
         if not hasattr(s, "assets_balance"):        s.assets_balance        = None
         if not hasattr(s, "assets_current_ship"):   s.assets_current_ship   = None
         if not hasattr(s, "assets_stored_ships"):   s.assets_stored_ships   = []
         if not hasattr(s, "assets_stored_modules"): s.assets_stored_modules = []
+        if not hasattr(s, "assets_carrier"):        s.assets_carrier        = None
+        self._shiptype_cache: dict[str, str] = {}
 
-        # Read Status.json for initial balance
+        # ── Step 1: build ShipType→localised name cache from Shipyard.json ────
+        # Must happen before any parsing in the background scan thread.
+        self._read_shipyard_json()
+
+        # ── Step 2: restore last-known fleet from plugin storage ──────────────
+        self._restore_from_storage()
+
+        # ── Step 3: scan recent journals for StoredShips/StoredModules ────────
+        # Also scans Shipyard journal events to extend the name cache with
+        # ships from any station the player has ever visited.
+        threading.Thread(target=self._scan_and_refresh, daemon=True,
+                         name="assets-scan").start()
+
+        # ── Step 4: read Status.json for initial balance ──────────────────────
         self._read_status_json()
 
-        import threading
-        threading.Timer(3.0, self._startup_refresh).start()
+    def _read_shipyard_json(self) -> None:
+        """Prime the ShipType→localised name cache from Shipyard.json.
 
-    def _startup_refresh(self) -> None:
+        Shipyard.json is written by the game whenever the player accesses a
+        shipyard.  It contains ``ShipType`` and ``ShipType_Localised`` for
+        every ship in the price list, giving us authoritative display names
+        for newer ships (e.g. ``smallcombat01_nx`` → ``Kestrel Mk II``) that
+        may not yet be in our static map.  We cache them in
+        ``self._shiptype_cache`` so ``_parse_stored_ships`` and the Loadout
+        handler can look them up.
+        """
+        try:
+            path = Path(self.core.journal_dir) / "Shipyard.json"
+            if not path.exists():
+                return
+            data = path.read_text(encoding="utf-8").strip()
+            # Shipyard.json is a single multi-line JSON object.
+            # Try whole-file parse first; fall back to line-by-line for
+            # any journal-format variants (one JSON object per line).
+            import json as _json
+            def _index_entries(obj):
+                for entry in obj.get("PriceList", []):
+                    st  = entry.get("ShipType", "").lower()
+                    loc = entry.get("ShipType_Localised", "")
+                    if st and loc:
+                        self._shiptype_cache[st] = loc
+            try:
+                _index_entries(_json.loads(data))
+            except ValueError:
+                for raw_line in data.splitlines():
+                    raw_line = raw_line.strip()
+                    if not raw_line:
+                        continue
+                    try:
+                        _index_entries(_json.loads(raw_line))
+                    except ValueError:
+                        pass
+        except Exception:
+            pass
+
+    def _localised_ship_name(self, ship_type: str) -> str:
+        """Return the best display name for a ShipType internal string."""
+        # 1. Shipyard.json cache (authoritative, covers newest ships)
+        key = ship_type.lower()
+        if key in self._shiptype_cache:
+            return self._shiptype_cache[key]
+        # 2. Static map
+        from core.state import normalise_ship_name
+        name = normalise_ship_name(ship_type)
+        if name:
+            return name
+        # 3. Fallback: clean up underscores + title-case
+        return ship_type.replace("_", " ").strip().title()
+
+    def _restore_from_storage(self) -> None:
+        """Load last-persisted ship and module lists from plugin storage."""
+        try:
+            saved = self.storage.read_json("data.json") or {}
+            s = self.core.state
+            ships   = saved.get("stored_ships")
+            modules = saved.get("stored_modules")
+            if isinstance(ships, list):
+                s.assets_stored_ships   = ships
+            if isinstance(modules, list):
+                s.assets_stored_modules = modules
+        except Exception:
+            pass
+
+    def _scan_and_refresh(self) -> None:
+        """Scan recent journals for StoredShips/StoredModules; update state and GUI.
+
+        StoredShips events only list ships NOT currently active, so a single
+        event will be missing whichever ship the player was flying at the time.
+        We therefore union across all StoredShips events in the scan window,
+        keyed by ShipID, and strip the current ship out after the scan.
+        """
+        try:
+            journal_dir = Path(self.core.journal_dir)
+            journals = sorted(journal_dir.glob("Journal*.log"), reverse=True)
+
+            # ships_by_id: accumulated union of all stored-ship records seen
+            ships_by_id: dict[int, dict] = {}
+            found_modules = False
+            found_carrier = False
+            found_loadout = False
+
+            for jpath in journals[:SCAN_JOURNALS]:
+                if found_modules and found_carrier and found_loadout:
+                    break
+                try:
+                    lines = jpath.read_text(encoding="utf-8").splitlines()
+                except OSError:
+                    continue
+                for line in reversed(lines):
+                    if found_modules and found_carrier and found_loadout:
+                        break
+                    try:
+                        ev = json.loads(line)
+                    except ValueError:
+                        continue
+                    name = ev.get("event")
+                    if name == "Shipyard":
+                        # Extend the ShipType→localised cache from any
+                        # shipyard the player has visited.
+                        for entry in ev.get("PriceList", []):
+                            st  = entry.get("ShipType", "").lower()
+                            loc = entry.get("ShipType_Localised", "")
+                            if st and loc:
+                                self._shiptype_cache[st] = loc
+                    elif name == "StoredShips":
+                        # Accumulate — don't stop on first hit.
+                        # A ship absent from one event was likely the active
+                        # ship at that moment; earlier events will list it.
+                        for ship_dict in self._parse_stored_ships(ev):
+                            sid = ship_dict.get("ship_id")
+                            if sid is not None and sid not in ships_by_id:
+                                ships_by_id[sid] = ship_dict
+                    elif not found_modules and name == "StoredModules":
+                        mods = self._parse_stored_modules(ev)
+                        self.core.state.assets_stored_modules = mods
+                        found_modules = True
+                    elif not found_carrier and name == "CarrierStats":
+                        self.core.state.assets_carrier = self._parse_carrier_stats(ev)
+                        found_carrier = True
+                    elif not found_loadout and name == "Loadout":
+                        ship_type   = ev.get("Ship", "")
+                        ship_type_l = (ev.get("Ship_Localised")
+                                       or self._localised_ship_name(ship_type))
+                        if ship_type_l and ship_type:
+                            self._shiptype_cache[ship_type.lower()] = ship_type_l
+                        self.core.state.assets_current_ship = {
+                            "_key":         "current",
+                            "current":      True,
+                            "ship_id":      ev.get("ShipID"),
+                            "type":         ship_type,
+                            "type_display": ship_type_l,
+                            "name":         ev.get("ShipName", ""),
+                            "ident":        ev.get("ShipIdent", ""),
+                            "system":       self.core.state.pilot_system or "—",
+                            "value":        ev.get("HullValue", 0),
+                            "hull":         100,
+                        }
+                        found_loadout = True
+
+            # Strip the current ship from stored list (it appears as current,
+            # not stored).  Do this after the full scan so we have both pieces.
+            current_id = (self.core.state.assets_current_ship or {}).get("ship_id")
+            if current_id is not None:
+                ships_by_id.pop(current_id, None)
+            self.core.state.assets_stored_ships = list(ships_by_id.values())
+
+            self._save_to_storage()
+        except Exception:
+            pass
+
+        # Trigger GUI refresh on main thread
         gq = self.core.gui_queue if self.core else None
         if gq:
             gq.put(("plugin_refresh", "assets"))
+
+    def _parse_stored_ships(self, event: dict) -> list:
+        ships = []
+        for section in ("ShipsHere", "ShipsRemote"):
+            for s in event.get(section, []):
+                ship_type = s.get("ShipType", "")
+                disp = (s.get("ShipType_Localised")
+                        or self._localised_ship_name(ship_type))
+                name   = s.get("Name", "")
+                ident  = s.get("Ident", "")
+                key    = f"{s.get('ShipID', '')}_{ship_type}"
+                ships.append({
+                    "_key":         key,
+                    "ship_id":      s.get("ShipID"),    # used to dedupe vs current ship
+                    "current":      False,
+                    "type":         ship_type,
+                    "type_display": disp,
+                    "name":         name,
+                    "ident":        ident,
+                    "system":       s.get("StarSystem", "—"),
+                    "value":        s.get("Value", 0),
+                    "hot":          s.get("Hot", False),
+                })
+        return ships
+
+    def _parse_stored_modules(self, event: dict) -> list:
+        mods = []
+        for i, m in enumerate(event.get("Items", [])):
+            internal = m.get("Name", "")
+            disp = (m.get("Name_Localised") or normalise_module_name(internal))
+            system = m.get("StarSystem", "—")
+            key    = f"{i}_{internal}_{system}"
+            mods.append({
+                "_key":         key,
+                "name_internal":internal,
+                "name_display": disp,
+                "slot":         m.get("Slot", ""),
+                "system":       system,
+                "mass":         m.get("Mass", 0.0),
+                "value":        m.get("Value", 0),
+                "hot":          m.get("Hot", False),
+            })
+        return mods
+
+    def _parse_carrier_stats(self, event: dict) -> dict:
+        """Extract display-relevant fields from a CarrierStats journal event."""
+        fin   = event.get("Finance", {})
+        space = event.get("SpaceUsage", {})
+        return {
+            "callsign":  event.get("Callsign", "—"),
+            "name":      event.get("Name", "—"),
+            "system":    event.get("CurrentStarSystem", "—"),
+            "fuel":      event.get("FuelLevel", 0),       # 0–1000 tritium
+            "balance":   fin.get("CarrierBalance",    0),
+            "available": fin.get("AvailableBalance",  0),
+            "capacity":  space.get("TotalCapacity",   0),
+            "free":      space.get("FreeSpace",       0),
+            "docking":   event.get("DockingAccess",   "—"),
+        }
+
+    def _save_to_storage(self) -> None:
+        """Persist current ship and module lists to plugin storage."""
+        try:
+            s = self.core.state
+            self.storage.write_json({
+                "stored_ships":   getattr(s, "assets_stored_ships",   []),
+                "stored_modules": getattr(s, "assets_stored_modules", []),
+            }, "data.json")
+        except Exception:
+            pass
 
     def _read_status_json(self) -> None:
         """Read Balance from Status.json on startup."""
@@ -586,10 +531,14 @@ class AssetsPlugin(BasePlugin):
 
             case "Loadout":
                 ship_type   = event.get("Ship", "")
-                ship_type_l = event.get("Ship_Localised") or normalise_ship_name(ship_type) or ship_type
+                ship_type_l = event.get("Ship_Localised") or self._localised_ship_name(ship_type)
+                # Also prime the name cache from this event's localised name
+                if ship_type_l and ship_type:
+                    self._shiptype_cache[ship_type.lower()] = ship_type_l
                 state.assets_current_ship = {
                     "_key":         "current",
                     "current":      True,
+                    "ship_id":      event.get("ShipID"),     # used to dedupe StoredShips
                     "type":         ship_type,
                     "type_display": ship_type_l,
                     "name":         event.get("ShipName", ""),
@@ -601,46 +550,29 @@ class AssetsPlugin(BasePlugin):
                 if gq: gq.put(("plugin_refresh", "assets"))
 
             case "StoredShips":
-                ships = []
-                for section in ("ShipsHere", "ShipsRemote"):
-                    for s in event.get(section, []):
-                        ship_type = s.get("ShipType", "")
-                        disp = (s.get("ShipType_Localised")
-                                or normalise_ship_name(ship_type)
-                                or ship_type.replace("_", " ").title())
-                        name = s.get("Name", "")
-                        key  = f"{s.get('ShipID', '')}_{ship_type}"
-                        ships.append({
-                            "_key":         key,
-                            "current":      False,
-                            "type":         ship_type,
-                            "type_display": disp,
-                            "name":         name,
-                            "system":       s.get("StarSystem", "—"),
-                            "value":        s.get("Value", 0),
-                            "hot":          s.get("Hot", False),
-                        })
-                state.assets_stored_ships = ships
+                state.assets_stored_ships = self._parse_stored_ships(event)
+                self._save_to_storage()
                 if gq: gq.put(("plugin_refresh", "assets"))
 
             case "StoredModules":
-                mods = []
-                for i, m in enumerate(event.get("Items", [])):
-                    internal = m.get("Name", "")
-                    disp = (m.get("Name_Localised")
-                            or normalise_module_name(internal))
-                    system = m.get("StarSystem", "—")
-                    key    = f"{i}_{internal}_{system}"
-                    mods.append({
-                        "_key":         key,
-                        "name_internal":internal,
-                        "name_display": disp,
-                        "system":       system,
-                        "mass":         m.get("Mass", 0.0),
-                        "value":        m.get("Value", 0),
-                        "hot":          m.get("Hot", False),
-                    })
-                state.assets_stored_modules = mods
+                state.assets_stored_modules = self._parse_stored_modules(event)
+                self._save_to_storage()
+                if gq: gq.put(("plugin_refresh", "assets"))
+
+            case "CarrierStats":
+                state.assets_carrier = self._parse_carrier_stats(event)
+                if gq: gq.put(("plugin_refresh", "assets"))
+
+            case "CarrierJump":
+                if state.assets_carrier is not None:
+                    state.assets_carrier["system"] = event.get("SystemName", "—")
+                if gq: gq.put(("plugin_refresh", "assets"))
+
+            case "CarrierFinance":
+                if state.assets_carrier is not None:
+                    fin = event.get("Finance", {})
+                    state.assets_carrier["balance"]   = fin.get("CarrierBalance",   state.assets_carrier.get("balance"))
+                    state.assets_carrier["available"] = fin.get("AvailableBalance", state.assets_carrier.get("available"))
                 if gq: gq.put(("plugin_refresh", "assets"))
 
 

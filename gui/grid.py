@@ -41,14 +41,16 @@ DEFAULT_LAYOUT = {
     # Left col:   commander → missions → alerts
     # Mid col:    session_stats → cargo → engineering
     # Right col:  crew_slf → assets
-    "commander":    {"col": 0,  "row": 0,  "width": 8, "height": 10},
+    #
+    # Commander is 13 rows to accommodate the vitals strip + ambient rows.
+    "commander":    {"col": 0,  "row": 0,  "width": 8, "height": 13},
     "session_stats":{"col": 8,  "row": 0,  "width": 8, "height": 10},
     "crew_slf":     {"col": 16, "row": 0,  "width": 8, "height": 10},
-    "missions":     {"col": 0,  "row": 10, "width": 8, "height": 12},
+    "missions":     {"col": 0,  "row": 13, "width": 8, "height": 12},
     "cargo":        {"col": 8,  "row": 10, "width": 8, "height": 8},
     "engineering":  {"col": 8,  "row": 18, "width": 8, "height": 12},
-    "alerts":       {"col": 0,  "row": 22, "width": 8, "height": 10},
-    "assets":       {"col": 16, "row": 10, "width": 8, "height": 22},
+    "alerts":       {"col": 0,  "row": 25, "width": 8, "height": 10},
+    "assets":       {"col": 16, "row": 10, "width": 8, "height": 25},
 }
 
 
