@@ -42,13 +42,12 @@ class CommanderBlock(BlockWidget):
 
         body = self._build_section(parent, title_widget=hdr_outer)
 
-        # ── Data rows ─────────────────────────────────────────────────────────
+        # ── Ambient rows — identity, location, powerplay ──────────────────────
         for lbl_text, attr in [
             ("Mode",        "_cmdr_mode"),
             ("Combat Rank", "_cmdr_rank"),
             ("System",      "_cmdr_system"),
             ("Body",        "_cmdr_location"),
-            ("Fuel",        "_cmdr_fuel"),
             ("Power",       "_cmdr_pp"),
             ("PP Rank",     "_cmdr_pprank"),
         ]:
@@ -68,7 +67,13 @@ class CommanderBlock(BlockWidget):
         self._pp_rank_bar.set_hexpand(True)
         body.append(bar_box)
 
-        # Shields | Hull — always last; highest urgency during combat
+        # ── Vitals separator — visual break between ambient and live metrics ──
+        vitals_sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        vitals_sep.add_css_class("vitals-sep")
+        body.append(vitals_sep)
+
+        # ── Vitals strip — combat-priority first, then fuel ───────────────────
+        # Shields | Hull
         row_sh = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         row_sh.add_css_class("data-row")
         key_sh = self.make_label("Shields | Hull", css_class="data-key")
@@ -79,6 +84,10 @@ class CommanderBlock(BlockWidget):
         self._cmdr_health.set_xalign(1.0)
         row_sh.append(self._cmdr_health)
         body.append(row_sh)
+
+        # Fuel | duration estimate
+        row_fu, self._cmdr_fuel = self.make_row("Fuel")
+        body.append(row_fu)
 
     def refresh(self) -> None:
         s = self.state
