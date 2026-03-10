@@ -6,7 +6,6 @@ GUI block: col=0, row=0, width=8, height=5 (default).
 """
 
 from core.plugin_loader import BasePlugin
-from core.state import normalise_ship_name
 from core.state import RANK_NAMES
 from core.emit import Terminal
 
@@ -24,6 +23,7 @@ class CommanderPlugin(BasePlugin):
         "Powerplay", "PowerplayJoin", "PowerplayLeave",
         "PowerplayDefect", "PowerplayRank", "PowerplayMerits",
         "VehicleSwitch", "Shutdown", "Music",
+        "ReservoirReplenished",   # fuel level updates
     ]
 
     # GUI grid defaults
@@ -35,6 +35,24 @@ class CommanderPlugin(BasePlugin):
     def on_load(self, core) -> None:
         super().on_load(core)
         core.register_block(self, priority=10)
+        # Read current fuel level from Status.json so the block shows a value
+        # immediately on startup rather than waiting for the first refuel event.
+        self._read_status_json(core)
+
+    def _read_status_json(self, core) -> None:
+        """Read FuelMain from Status.json for immediate display on startup."""
+        import json
+        from pathlib import Path
+        try:
+            path = Path(core.journal_dir) / "Status.json"
+            if path.exists():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                fuel = data.get("Fuel", {})
+                main = fuel.get("FuelMain")
+                if main is not None:
+                    core.state.fuel_current = float(main)
+        except Exception:
+            pass
 
     def on_event(self, event: dict, state) -> None:
         core = self.core
@@ -57,7 +75,7 @@ class CommanderPlugin(BasePlugin):
                 state.in_game     = True
                 state.offline_since_mono = None
                 state.last_offline_alert = None
-                state.pilot_ship = normalise_ship_name(event.get("Ship_Localised") or event.get("Ship"))
+                state.pilot_ship = event.get("Ship_Localised") or event.get("Ship")
                 if event.get("ShipName"):  state.ship_name  = event["ShipName"]
                 if event.get("ShipIdent"): state.ship_ident = event["ShipIdent"]
                 if "GameMode" in event:
@@ -77,6 +95,14 @@ class CommanderPlugin(BasePlugin):
                     timestamp=event.get("_logtime"),
                     loglevel=2,
                 )
+
+            case "ReservoirReplenished":
+                # Alerts plugin owns the burn-rate calculation and sets
+                # state.fuel_current and state.fuel_burn_rate there too.
+                # We only update here to ensure the commander block stays live
+                # even if the alerts plugin is disabled.
+                state.fuel_current = event.get("FuelMain")
+                if gq: gq.put(("cmdr_update", None))
 
             case "Loadout":
                 state.fuel_tank_size = (
@@ -118,8 +144,8 @@ class CommanderPlugin(BasePlugin):
                 )
 
             case "ShipyardSwap":
-                state.pilot_ship = normalise_ship_name(
-                    event.get("ShipType_Localised") or event.get("ShipType")
+                state.pilot_ship = (
+                    event.get("ShipType_Localised") or event["ShipType"].title()
                 )
                 core.emitter.emit(
                     msg_term=f"Swapped ship to {state.pilot_ship}",

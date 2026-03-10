@@ -48,6 +48,7 @@ class CommanderBlock(BlockWidget):
             ("Combat Rank", "_cmdr_rank"),
             ("System",      "_cmdr_system"),
             ("Body",        "_cmdr_location"),
+            ("Fuel",        "_cmdr_fuel"),
             ("Power",       "_cmdr_pp"),
             ("PP Rank",     "_cmdr_pprank"),
         ]:
@@ -126,6 +127,32 @@ class CommanderBlock(BlockWidget):
         else:
             self._cmdr_location.set_label("—")
             self._cmdr_location.get_parent().set_visible(False)
+
+        # ── Fuel ──────────────────────────────────────────────────────────────
+        fuel_current = s.fuel_current
+        fuel_tank    = s.fuel_tank_size
+        if fuel_current is not None and fuel_tank and fuel_tank > 0:
+            fuel_pct = fuel_current / fuel_tank * 100
+            fuel_str = f"{fuel_pct:.0f}%"
+            # Append time-to-dry if burn rate is known
+            burn = getattr(s, "fuel_burn_rate", None)
+            if burn and burn > 0:
+                secs_remain = (fuel_current / burn) * 3600
+                fuel_str += f"  (~{self.fmt_duration(int(secs_remain))})"
+            self._cmdr_fuel.set_label(fuel_str)
+            self._cmdr_fuel.get_parent().set_visible(True)
+            # Colour matches alert thresholds
+            from core.state import FUEL_CRIT_THRESHOLD, FUEL_WARN_THRESHOLD
+            for cls in ("health-good", "health-warn", "health-crit"):
+                self._cmdr_fuel.remove_css_class(cls)
+            if fuel_current < fuel_tank * FUEL_CRIT_THRESHOLD:
+                self._cmdr_fuel.add_css_class("health-crit")
+            elif fuel_current < fuel_tank * FUEL_WARN_THRESHOLD:
+                self._cmdr_fuel.add_css_class("health-warn")
+            else:
+                self._cmdr_fuel.add_css_class("health-good")
+        else:
+            self._cmdr_fuel.get_parent().set_visible(False)
 
         # ── Powerplay (all hidden when not pledged) ───────────────────────────
         has_power = bool(s.pp_power)
