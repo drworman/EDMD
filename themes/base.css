@@ -251,6 +251,17 @@ progressbar.pp-rank-bar {
     min-width: 40px;
 }
 
+/* ── Commander block vitals separator ────────────────────────────────────── */
+/* Thin visual divider between the ambient info rows and the live vitals
+   strip (Shields | Hull and Fuel).  Uses the same colour as other separators
+   but with a small margin to give the vitals strip breathing room. */
+
+.vitals-sep {
+    margin-top: 4px;
+    margin-bottom: 2px;
+    opacity: 0.5;
+}
+
 progressbar.pp-rank-bar trough {
     min-height: 4px;
     min-width: 40px;
