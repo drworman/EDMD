@@ -21,7 +21,7 @@ Config [Inara] in config.toml
 ------------------------------
     Enabled        = false          # opt-in
     ApiKey         = ""             # personal API key from inara.cz settings
-    CommanderName  = ""             # in-game commander name
+    CommanderName  = ""             # in-game name only — do not include "CMDR"
 
 Rate limits
 -----------
@@ -299,7 +299,9 @@ class InaraPlugin(BasePlugin):
             return
 
         self._enabled     = True
-        self._cmdr_name   = cfg["CommanderName"]
+        # Strip "CMDR " prefix if the user included it — a common mistake
+        raw_name          = cfg["CommanderName"].strip()
+        self._cmdr_name   = raw_name[5:].strip() if raw_name.upper().startswith("CMDR ") else raw_name
         self._sender      = _Sender(self._cmdr_name, cfg["ApiKey"])
         self._sender.start()
 

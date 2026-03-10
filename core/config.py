@@ -78,6 +78,12 @@ CFG_DEFAULTS_EDASTRO = {
     "UploadCarrierEvents": False,
 }
 
+CFG_DEFAULTS_INARA = {
+    "Enabled":       False,
+    "ApiKey":        "",
+    "CommanderName": "",
+}
+
 
 CFG_DEFAULTS_NOTIFY = {
     "InboundScan":      1,
@@ -252,6 +258,7 @@ class ConfigManager:
         self.eddn_cfg      = self.load_setting("EDDN",      CFG_DEFAULTS_EDDN,     False)
         self.edsm_cfg      = self.load_setting("EDSM",      CFG_DEFAULTS_EDSM,     False)
         self.edastro_cfg   = self.load_setting("EDAstro",   CFG_DEFAULTS_EDASTRO,  False)
+        self.inara_cfg     = self.load_setting("Inara",     CFG_DEFAULTS_INARA,    False)
 
     def load_setting(
         self,

@@ -358,6 +358,7 @@ class PreferencesWindow(Gtk.Window):
         "EDDN":     {"Enabled", "UploaderID", "TestMode"},
         "EDSM":     {"Enabled", "CommanderName", "ApiKey"},
         "EDAstro":  {"Enabled", "UploadCarrierEvents"},
+        "Inara":    {"Enabled", "ApiKey", "CommanderName"},
     }
 
     def _record(self, section: str, key: str, value) -> None:
@@ -389,6 +390,9 @@ class PreferencesWindow(Gtk.Window):
 
     def _track_edastro(self, key: str, value) -> None:
         self._record("EDAstro", key, value)
+
+    def _track_inara(self, key: str, value) -> None:
+        self._record("Inara", key, value)
 
     # ── Data & Integrations tab ───────────────────────────────────────────────
 
@@ -513,6 +517,49 @@ class PreferencesWindow(Gtk.Window):
             carrier_sw,
             restart_required=True,
         ))
+
+        box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+
+        # ── Inara ─────────────────────────────────────────────────────────────
+        box.append(self._section_label("Inara"))
+
+        inara_note = Gtk.Label(
+            label="Update your Inara profile with flight log, ranks, credits,\n"
+                  "missions, and ship loadout.  Requires an Inara account.\n"
+                  "Get your API key at:  inara.cz  → Settings → API"
+        )
+        inara_note.set_xalign(0.0)
+        inara_note.add_css_class("prefs-note")
+        box.append(inara_note)
+
+        inara_cfg = self._cfg.inara_cfg
+
+        inara_sw = Gtk.Switch()
+        inara_sw.set_active(bool(inara_cfg.get("Enabled", False)))
+        inara_sw.set_valign(Gtk.Align.CENTER)
+        inara_sw.connect("state-set", lambda w, v: self._track_inara("Enabled", v))
+        box.append(self._row("Enable Inara", inara_sw, restart_required=True))
+
+        inara_cmdr_entry = Gtk.Entry()
+        inara_cmdr_entry.set_text(inara_cfg.get("CommanderName", ""))
+        inara_cmdr_entry.set_hexpand(True)
+        inara_cmdr_entry.set_width_chars(24)
+        inara_cmdr_entry.set_placeholder_text("your in-game commander name")
+        inara_cmdr_entry.connect(
+            "changed", lambda w: self._track_inara("CommanderName", w.get_text().strip())
+        )
+        box.append(self._row("Commander Name", inara_cmdr_entry, restart_required=True))
+
+        inara_key_entry = Gtk.Entry()
+        inara_key_entry.set_text(inara_cfg.get("ApiKey", ""))
+        inara_key_entry.set_hexpand(True)
+        inara_key_entry.set_width_chars(24)
+        inara_key_entry.set_visibility(False)
+        inara_key_entry.set_placeholder_text("your Inara API key")
+        inara_key_entry.connect(
+            "changed", lambda w: self._track_inara("ApiKey", w.get_text().strip())
+        )
+        box.append(self._row("Inara API Key", inara_key_entry, restart_required=True))
 
     # ── Apply & Save ──────────────────────────────────────────────────────────
 
