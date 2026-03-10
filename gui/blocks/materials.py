@@ -190,6 +190,7 @@ class MaterialsBlock(BlockWidget):
 
         list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         list_box.set_vexpand(True)
+        list_box.set_margin_end(12)   # clear GTK4 overlay scrollbar
         scroll.set_child(list_box)
 
         empty_lbl = Gtk.Label(label="— none —")

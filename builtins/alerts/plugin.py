@@ -101,12 +101,6 @@ class AlertsPlugin(BasePlugin):
                     emoji="⚠️", sigil="^  HULL",
                     timestamp=logtime, loglevel=notify["HullEvent"],
                 )
-                if (
-                    cfg.pcfg("QuitOnLowHull")
-                    and hullhealth <= cfg.pcfg("QuitOnLowHullThreshold", 10)
-                ):
-                    from core.journal import _flush_session
-                    _flush_session(cfg)
 
             case "FighterDestroyed" if state.prev_event != "StartJump":
                 self._push("💀", "Fighter destroyed!")
@@ -147,22 +141,6 @@ class AlertsPlugin(BasePlugin):
                     emoji="⛽", sigil="+  FUEL",
                     timestamp=logtime, loglevel=fuel_loglevel,
                 )
-                if cfg.pcfg("QuitOnLowFuel"):
-                    _fp = cfg.pcfg("QuitOnLowFuelPercent", 20)
-                    _fm = cfg.pcfg("QuitOnLowFuelMinutes", 30)
-                    _pt = fuel_pct <= _fp
-                    _tt = False
-                    if (
-                        ses.fuel_check_time and state.session_start_time
-                        and fuel_loglevel > 0
-                    ):
-                        try:
-                            _tt = (event["FuelMain"] / fuel_hour) * 60 <= _fm
-                        except Exception:
-                            pass
-                    if _pt or _tt:
-                        from core.journal import _flush_session
-                        _flush_session(cfg)
 
             case "EjectCargo" if not event.get("Abandoned") and event.get("Count") == 1:
                 name = event.get("Type_Localised") or event["Type"].title()
