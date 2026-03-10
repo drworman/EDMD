@@ -7,8 +7,6 @@ JSON files in the journal directory:
   Wallet    — credit balance (Status.json, updated on every Status event)
   Ships     — current ship + stored ships (StoredShips journal event)
   Modules   — modules stored away from any ship (StoredModules journal event)
-  Locker    — Odyssey ShipLocker components / items (ShipLocker event + JSON)
-
 Data availability notes
 -----------------------
 • Balance        : live — Status.json is written by the game every ~few seconds.
@@ -18,16 +16,14 @@ Data availability notes
                    update until the player visits a shipyard again.
 • Stored modules : stale — StoredModules only fires when the player opens
                    outfitting.  Same caveat as stored ships.
-• ShipLocker     : live — ShipLocker.json + journal event fire frequently.
+
+Note: Odyssey ShipLocker inventory has moved to builtins/engineering/plugin.py.
 
 State stored on MonitorState (all added via hasattr guard in on_load):
     assets_balance         float   — current credit balance
     assets_current_ship    dict    — {type, name, ident, system, hull, value}
     assets_stored_ships    list    — [{type_display, name, system, value, hot}]
     assets_stored_modules  list    — [{name_display, system, mass, value, hot}]
-    assets_shiplocker      dict    — {"components": [...], "items": [...],
-                                      "consumables": [...], "data": [...]}
-                                     each entry: {name_display, count}
 
 CAPI note: when FDev CAPI is integrated, stored ships and modules will be
 sourced from /fleetcarrier and /profile endpoints rather than relying on
@@ -218,7 +214,6 @@ _TABS = [
     ("wallet",  "Wallet"),
     ("ships",   "Ships"),
     ("modules", "Modules"),
-    ("locker",  "Locker"),
 ]
 
 WIDE_THRESHOLD = 380
@@ -247,7 +242,6 @@ if _GTK:
             #   wallet  — not used (static labels)
             #   ships   — keyed by ship id string
             #   modules — keyed by (system, name)
-            #   locker  — keyed by item name_key
             self._sections: dict[str, dict] = {}
 
             self._build_tabbed_layout()
@@ -340,16 +334,6 @@ if _GTK:
             sm_row.append(self._mod_count_lbl)
             box.append(sm_row)
 
-            # Locker item count
-            lk_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-            lk_key = self.make_label("Locker items", css_class="data-key")
-            self._locker_count_lbl = self.make_label("—", css_class="data-value")
-            self._locker_count_lbl.set_hexpand(True)
-            self._locker_count_lbl.set_xalign(1.0)
-            lk_row.append(lk_key)
-            lk_row.append(self._locker_count_lbl)
-            box.append(lk_row)
-
             return box
 
         def _make_section_scroll(self):
@@ -405,8 +389,6 @@ if _GTK:
             stored_ships   = getattr(state, "assets_stored_ships",   [])
             current_ship   = getattr(state, "assets_current_ship",   None)
             stored_modules = getattr(state, "assets_stored_modules", [])
-            locker         = getattr(state, "assets_shiplocker",     {})
-
             all_ships = ([current_ship] if current_ship else []) + stored_ships
             self._ship_count_lbl.set_label(str(len(all_ships)) if all_ships else "—")
 
@@ -414,23 +396,11 @@ if _GTK:
                 str(len(stored_modules)) if stored_modules else "—"
             )
 
-            locker_total = sum(
-                e["count"]
-                for group in locker.values()
-                for e in group
-            )
-            self._locker_count_lbl.set_label(
-                str(locker_total) if locker_total else "—"
-            )
-
             # Ships tab
             self._refresh_ships(all_ships)
 
             # Modules tab
             self._refresh_modules(stored_modules)
-
-            # Locker tab
-            self._refresh_locker(locker)
 
         def _refresh_ships(self, ships: list) -> None:
             sec = self._sections.get("ships")
@@ -525,53 +495,6 @@ if _GTK:
 
             empty_lbl.set_visible(len(seen) == 0)
 
-        def _refresh_locker(self, locker: dict) -> None:
-            sec = self._sections.get("locker")
-            if sec is None:
-                return
-            list_box  = sec["list_box"]
-            empty_lbl = sec["empty_lbl"]
-            rows      = sec["rows"]
-
-            # Flatten all locker categories into one sorted list
-            all_items: list[tuple[str, str, int]] = []  # (key, name_display, count)
-            for group_name, entries in locker.items():
-                for e in entries:
-                    k = e["name_key"]
-                    all_items.append((k, e["name_display"], e["count"]))
-            all_items.sort(key=lambda x: x[1])
-
-            seen = set()
-            for key, name_display, count in all_items:
-                seen.add(key)
-                count_str = str(count)
-                if key in rows:
-                    n_lbl, c_lbl = rows[key]
-                    n_lbl.set_label(name_display)
-                    c_lbl.set_label(count_str)
-                else:
-                    row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-                    row_box.set_margin_top(1)
-                    row_box.set_margin_bottom(1)
-                    row_box.set_margin_start(4)
-                    n_lbl = self.make_label(name_display, css_class="data-key")
-                    n_lbl.set_hexpand(True)
-                    n_lbl.set_ellipsize(3)
-                    c_lbl = self.make_label(count_str, css_class="data-value")
-                    c_lbl.set_xalign(1.0)
-                    row_box.append(n_lbl)
-                    row_box.append(c_lbl)
-                    list_box.append(row_box)
-                    rows[key] = (n_lbl, c_lbl)
-
-            for key in list(rows.keys()):
-                if key not in seen:
-                    n_lbl, _ = rows.pop(key)
-                    parent = n_lbl.get_parent()
-                    if parent:
-                        list_box.remove(parent)
-
-            empty_lbl.set_visible(len(seen) == 0)
 
 
 # ── Plugin ────────────────────────────────────────────────────────────────────
@@ -580,7 +503,7 @@ class AssetsPlugin(BasePlugin):
     PLUGIN_NAME        = "assets"
     PLUGIN_DISPLAY     = "Assets"
     PLUGIN_VERSION     = "1.0.0"
-    PLUGIN_DESCRIPTION = "Commander assets — wallet, ships, modules, Odyssey locker."
+    PLUGIN_DESCRIPTION = "Commander assets — wallet, ships, and stored modules."
 
     SUBSCRIBED_EVENTS = [
         # Balance
@@ -591,8 +514,6 @@ class AssetsPlugin(BasePlugin):
         "StoredShips",
         # Modules
         "StoredModules",
-        # Locker
-        "ShipLocker",
         # Session boundaries
         "LoadGame",
     ]
@@ -609,13 +530,9 @@ class AssetsPlugin(BasePlugin):
         if not hasattr(s, "assets_current_ship"):   s.assets_current_ship   = None
         if not hasattr(s, "assets_stored_ships"):   s.assets_stored_ships   = []
         if not hasattr(s, "assets_stored_modules"): s.assets_stored_modules = []
-        if not hasattr(s, "assets_shiplocker"):     s.assets_shiplocker     = {}
 
         # Read Status.json for initial balance
         self._read_status_json()
-
-        # Read ShipLocker.json for initial locker state
-        self._read_shiplocker_json()
 
         import threading
         threading.Timer(3.0, self._startup_refresh).start()
@@ -637,15 +554,6 @@ class AssetsPlugin(BasePlugin):
         except Exception:
             pass
 
-    def _read_shiplocker_json(self) -> None:
-        """Read ShipLocker.json for initial locker contents."""
-        try:
-            path = Path(self.core.journal_dir) / "ShipLocker.json"
-            if path.exists():
-                data = json.loads(path.read_text(encoding="utf-8"))
-                self.core.state.assets_shiplocker = _parse_shiplocker(data)
-        except Exception:
-            pass
 
     def on_event(self, event: dict, state) -> None:
         core = self.core
@@ -735,32 +643,5 @@ class AssetsPlugin(BasePlugin):
                 state.assets_stored_modules = mods
                 if gq: gq.put(("plugin_refresh", "assets"))
 
-            case "ShipLocker":
-                state.assets_shiplocker = _parse_shiplocker(event)
-                if gq: gq.put(("plugin_refresh", "assets"))
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _parse_shiplocker(data: dict) -> dict:
-    """Parse a ShipLocker event or ShipLocker.json into the assets_shiplocker
-    structure: dict of group name → list of {name_key, name_display, count}."""
-    result: dict[str, list] = {}
-    for group in ("Items", "Components", "Consumables", "Data"):
-        entries = []
-        for item in data.get(group, []):
-            count = int(item.get("Count", 0))
-            if count <= 0:
-                continue
-            key  = item.get("Name", "").lower()
-            disp = (item.get("Name_Localised")
-                    or key.replace("_", " ").title())
-            entries.append({
-                "name_key":     key,
-                "name_display": disp,
-                "count":        count,
-            })
-        entries.sort(key=lambda e: e["name_display"])
-        if entries:
-            result[group.lower()] = entries
-    return result

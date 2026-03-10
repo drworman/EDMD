@@ -33,7 +33,7 @@ from gui.blocks   import (
     SessionStatsBlock,
     AlertsBlock,
     CargoBlock,
-    MaterialsBlock,
+    EngineeringBlock,
     AssetsBlock,
 )
 
@@ -48,7 +48,7 @@ _BUILTIN_REGISTRY = [
     ("missions",      MissionsBlock,     "Mission Stack"),
     ("alerts",        AlertsBlock,       "Alerts"),
     ("cargo",         CargoBlock,        "Cargo"),
-    ("materials",     MaterialsBlock,    "Materials"),
+    ("engineering",   EngineeringBlock,  "Engineering"),
     ("assets",        AssetsBlock,       "Assets"),
 ]
 

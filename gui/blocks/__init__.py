@@ -12,7 +12,7 @@ from gui.blocks.missions      import MissionsBlock
 from gui.blocks.session_stats import SessionStatsBlock
 from gui.blocks.alerts        import AlertsBlock
 from gui.blocks.cargo         import CargoBlock
-from gui.blocks.materials     import MaterialsBlock
+from gui.blocks.engineering   import EngineeringBlock
 from gui.blocks.assets        import AssetsBlock
 
 __all__ = [
@@ -22,6 +22,6 @@ __all__ = [
     "SessionStatsBlock",
     "AlertsBlock",
     "CargoBlock",
-    "MaterialsBlock",
+    "EngineeringBlock",
     "AssetsBlock",
 ]
