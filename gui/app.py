@@ -98,14 +98,20 @@ class EdmdWindow(Gtk.ApplicationWindow):
 
         # Build registry now — plugins are already loaded by this point
         self._registry      = _build_registry(core)
-        self._grid          = BlockGrid(canvas_width=1280, canvas_height=760)
+        # Canvas width is unknown until the window is mapped.  Use a 1x1
+        # placeholder — _build_and_place_blocks is deferred to the map signal.
+        self._grid          = BlockGrid(canvas_width=1, canvas_height=1)
         self._blocks: dict  = {}
         self._is_fullscreen = False
         self._last_canvas_w = 0
         self._last_canvas_h = 0
+        self._blocks_placed = False
 
         self._build_ui()
-        self._build_and_place_blocks()
+        # Do NOT call _build_and_place_blocks here — the window has no real
+        # dimensions yet.  We connect to "map" so placement runs with the
+        # actual canvas size, preventing the initial oversized-then-shrink flash.
+        self.connect("map", self._on_window_map)
         self._refresh_all()
 
         GLib.timeout_add(self.POLL_MS,   self._poll_queue)
@@ -213,9 +219,27 @@ class EdmdWindow(Gtk.ApplicationWindow):
 
     # ── Canvas resize → reflow ────────────────────────────────────────────────
 
+    def _on_window_map(self, window) -> None:
+        """Fires once when the window is first shown with its real dimensions.
+        We build and place blocks here so the initial placement uses the actual
+        canvas size rather than a hardcoded guess."""
+        w = self._canvas.get_width()
+        h = self._canvas.get_height()
+        if w > 1:
+            self._grid.update_canvas_width(w)
+        if h > 1:
+            self._grid.update_canvas_height(h)
+        self._build_and_place_blocks()
+        self._blocks_placed = True
+        # Prime last-known size so the first reflow tick is a no-op
+        self._last_canvas_w = self._canvas.get_width()
+        self._last_canvas_h = self._canvas.get_height()
+
     def _on_canvas_realize(self, canvas) -> None:
         # Trigger one poll after realize so we get real dims on first map.
-        GLib.timeout_add(50, self._poll_canvas_size)
+        # Skip if blocks haven't been placed yet — _on_window_map handles that.
+        if self._blocks_placed:
+            GLib.timeout_add(50, self._poll_canvas_size)
 
     def _on_canvas_size_changed(self, canvas, _param) -> None:
         """notify::width or notify::height — fires when the canvas allocation changes."""
