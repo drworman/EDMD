@@ -206,6 +206,7 @@ class MaterialsBlock(BlockWidget):
 
     def on_resize(self, w: int, h: int) -> None:
         """Called by the window after every set_size_request — switch layout mode."""
+        super().on_resize(w, h)
         if w < 10:
             return
         target = "wide" if w >= WIDE_THRESHOLD else "tabbed"

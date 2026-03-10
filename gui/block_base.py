@@ -58,6 +58,10 @@ class BlockWidget:
         self._resize_origin_y = 0.0
         self._resize_ghost: "Gtk.Frame | None" = None
 
+        # Collapse state
+        self._collapsed     = False
+        self._content_box: "Gtk.Box | None" = None   # hidden when collapsed
+
     # ── Build ─────────────────────────────────────────────────────────────────
 
     def build_widget(self, name: str, grid, window) -> Gtk.Widget:
@@ -81,6 +85,7 @@ class BlockWidget:
         content_box.set_hexpand(True)
         content_box.set_vexpand(True)
         outer_box.append(content_box)
+        self._content_box = content_box
 
         # Let subclass populate content_box; this also sets self._header
         self.build(content_box)
@@ -112,6 +117,7 @@ class BlockWidget:
 
         if self._header is not None:
             self._header.set_cursor(Gdk.Cursor.new_from_name("grab"))
+            self._wire_collapse(self._header)
 
         return self._frame
 
@@ -123,6 +129,36 @@ class BlockWidget:
     def footer(self) -> Gtk.Box | None:
         """Return the footer gutter box. Prepend items before the spacer."""
         return self._footer
+
+    # ── Collapse on double-click ───────────────────────────────────────────────
+
+    def _wire_collapse(self, widget: Gtk.Widget) -> None:
+        click = Gtk.GestureClick()
+        click.set_button(1)
+        click.connect("pressed", self._on_header_pressed)
+        widget.add_controller(click)
+
+    def _on_header_pressed(self, gesture, n_press, x, y) -> None:
+        if n_press == 2:
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            self._toggle_collapse()
+
+    def _toggle_collapse(self) -> None:
+        self._collapsed = not self._collapsed
+        show = not self._collapsed
+        if self._content_box:
+            self._content_box.set_visible(show)
+        if self._footer:
+            self._footer.set_visible(show)
+        if self._frame:
+            cell = self._grid.cell_for(self._name)
+            x, y, w, _ = self._grid.pixel_rect(cell)
+            if self._collapsed:
+                h = (self._header.get_height() if self._header else 24) + 4
+                self._frame.set_size_request(w, h)
+            else:
+                _, _, w, h = self._grid.pixel_rect(cell)
+                self._frame.set_size_request(w, h)
 
     # ── Drag to move (header label only) ─────────────────────────────────────
 
@@ -309,6 +345,8 @@ class BlockWidget:
 
     def on_resize(self, w: int, h: int) -> None:
         """Called by the window after every set_size_request on this block.
-        Override in subclasses that need to respond to their own pixel width,
-        e.g. to switch between layout modes.  Default is a no-op."""
-        pass
+        Enforces collapsed height if the block is currently collapsed.
+        Subclasses that override this should call super().on_resize(w, h) first."""
+        if self._collapsed and self._frame and self._header:
+            collapsed_h = self._header.get_height() + 4
+            self._frame.set_size_request(w, max(collapsed_h, 26))
