@@ -342,60 +342,144 @@ class EdmdMenuBar:
 
         dlg.present()
 
-    # ── Plugins dialog ────────────────────────────────────────────────────────
+    # ── Installed Plugins dialog ──────────────────────────────────────────────
 
     def _show_plugins_dialog(self) -> None:
-        """Simple dialog listing loaded plugins with name/version/status."""
-        dlg = Gtk.Window(title="Loaded Plugins")
+        """Installed Plugins dialog — lists all plugins (enabled and disabled)
+        with per-plugin enable/disable toggles.  Changes persist to
+        plugin_states.json and take effect after restart."""
+
+        core   = self._win._core
+        loader = getattr(core, "_loader", None)
+
+        dlg = Gtk.Window(title="Installed Plugins")
         dlg.set_transient_for(self._win)
         dlg.set_modal(True)
-        dlg.set_resizable(False)
-        dlg.set_default_size(400, -1)
+        dlg.set_resizable(True)
+        dlg.set_default_size(460, -1)
         dlg.add_css_class("plugins-dialog")
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         outer.set_margin_top(16)
         outer.set_margin_bottom(16)
         outer.set_margin_start(20)
         outer.set_margin_end(20)
         dlg.set_child(outer)
 
-        hdr = Gtk.Label(label="Loaded Plugins")
+        # ── Header ────────────────────────────────────────────────────────────
+        hdr = Gtk.Label(label="Installed Plugins")
         hdr.add_css_class("section-header")
         hdr.set_xalign(0.0)
         outer.append(hdr)
 
         outer.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
 
-        plugins = list(getattr(self._win._core, "_plugins", {}).values())
-        if not plugins:
-            lbl = Gtk.Label(label="No plugins loaded.")
+        # ── Restart notice (hidden until a toggle changes) ────────────────────
+        restart_bar = Gtk.Label(
+            label="⟳  Restart EDMD to apply changes"
+        )
+        restart_bar.add_css_class("plugin-restart-notice")
+        restart_bar.set_xalign(0.5)
+        restart_bar.set_visible(False)
+        # will be shown when any toggle fires
+
+        # ── Collect all plugins: enabled + disabled ───────────────────────────
+        active_plugins   = list(getattr(core, "_plugins", {}).values())
+        disabled_plugins = getattr(loader, "disabled_meta", []) if loader else []
+
+        all_plugins = (
+            [(p, True)  for p in active_plugins]
+            + [(p, False) for p in disabled_plugins]
+        )
+        # Sort: builtins first (alphabetical), then third-party (alphabetical)
+        all_plugins.sort(key=lambda x: (
+            not getattr(x[0], "_is_builtin", True),
+            getattr(x[0], "PLUGIN_DISPLAY", "").lower(),
+        ))
+
+        if not all_plugins:
+            lbl = Gtk.Label(label="No plugins found.")
             lbl.add_css_class("about-author")
             lbl.set_xalign(0.0)
+            lbl.set_margin_top(8)
             outer.append(lbl)
         else:
-            for plugin in plugins:
-                row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-                name_lbl = Gtk.Label(
-                    label=getattr(plugin, "PLUGIN_DISPLAY",
-                                  getattr(plugin, "PLUGIN_NAME", "Unknown"))
-                )
-                name_lbl.set_xalign(0.0)
-                name_lbl.set_hexpand(True)
-                name_lbl.add_css_class("data-value")
-                ver_lbl = Gtk.Label(
-                    label=f"v{getattr(plugin, 'PLUGIN_VERSION', '?')}"
-                )
-                ver_lbl.add_css_class("data-key")
-                row.append(name_lbl)
-                row.append(ver_lbl)
-                outer.append(row)
+            # ── Section: Builtins ─────────────────────────────────────────────
+            builtins_list  = [(p, e) for p, e in all_plugins if getattr(p, "_is_builtin", True)]
+            thirdparty_list = [(p, e) for p, e in all_plugins if not getattr(p, "_is_builtin", True)]
 
-        outer.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+            for section_items, section_title in [
+                (builtins_list,   "Built-in"),
+                (thirdparty_list, "Third-party"),
+            ]:
+                if not section_items:
+                    continue
+
+                sec_lbl = Gtk.Label(label=section_title)
+                sec_lbl.add_css_class("plugin-section-label")
+                sec_lbl.set_xalign(0.0)
+                sec_lbl.set_margin_top(10)
+                sec_lbl.set_margin_bottom(2)
+                outer.append(sec_lbl)
+
+                for plugin, is_active in section_items:
+                    pname    = getattr(plugin, "PLUGIN_NAME",    "unknown")
+                    pdisplay = getattr(plugin, "PLUGIN_DISPLAY",  pname)
+                    pver     = getattr(plugin, "PLUGIN_VERSION",  "?")
+                    pdesc    = getattr(plugin, "PLUGIN_DESCRIPTION", "")
+                    is_blt   = getattr(plugin, "_is_builtin",    False)
+
+                    # Container row
+                    row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
+                    row.set_margin_top(4)
+                    row.set_margin_bottom(4)
+                    outer.append(row)
+
+                    # Top line: name + version badge + toggle
+                    top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                    row.append(top)
+
+                    name_lbl = Gtk.Label(label=pdisplay)
+                    name_lbl.set_xalign(0.0)
+                    name_lbl.set_hexpand(True)
+                    name_lbl.add_css_class("data-value")
+                    top.append(name_lbl)
+
+                    ver_lbl = Gtk.Label(label=f"v{pver}")
+                    ver_lbl.add_css_class("data-key")
+                    top.append(ver_lbl)
+
+                    toggle = Gtk.Switch()
+                    toggle.set_active(is_active)
+                    toggle.set_valign(Gtk.Align.CENTER)
+                    # Builtins can be toggled too; user is in charge.
+                    top.append(toggle)
+
+                    # Description line (if present)
+                    if pdesc:
+                        desc_lbl = Gtk.Label(label=pdesc)
+                        desc_lbl.add_css_class("plugin-desc")
+                        desc_lbl.set_xalign(0.0)
+                        desc_lbl.set_wrap(True)
+                        row.append(desc_lbl)
+
+                    outer.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+
+                    # Toggle handler — capture pname by value
+                    def _on_toggle(sw, _param, name=pname):
+                        if loader:
+                            loader.set_enabled(name, sw.get_active())
+                        restart_bar.set_visible(True)
+
+                    toggle.connect("notify::active", _on_toggle)
+
+        # ── Restart notice + close ────────────────────────────────────────────
+        outer.append(restart_bar)
 
         close_btn = Gtk.Button(label="Close")
         close_btn.add_css_class("about-close")
         close_btn.set_halign(Gtk.Align.CENTER)
+        close_btn.set_margin_top(10)
         close_btn.connect("clicked", lambda *_: dlg.close())
         outer.append(close_btn)
 

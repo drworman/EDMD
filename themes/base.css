@@ -567,6 +567,27 @@ popover arrow {
     background-color: var(--accent-hover);
 }
 
+/* ── Installed Plugins dialog extras ─────────────────────────────────────── */
+
+.plugin-section-label {
+    font-size: 0.78em;
+    font-weight: bold;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+}
+
+.plugin-desc {
+    font-size: 0.80em;
+    color: var(--fg-dim);
+    padding-left: 2px;
+}
+
+.plugin-restart-notice {
+    font-size: 0.82em;
+    color: var(--accent);
+    padding: 6px 0 2px 0;
+}
+
 /* ── Preferences window ──────────────────────────────────────────────────── */
 
 .prefs-window,

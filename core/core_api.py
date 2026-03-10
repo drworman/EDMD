@@ -76,6 +76,7 @@ class CoreAPI:
         self._blocks:  list = []   # plugins with GUI blocks, in priority order
         self._alerts:  list = []   # plugins that feed the Alerts block
         self._plugins: dict = {}   # name -> plugin instance
+        self._loader         = None  # PluginLoader — set after load_all()
 
     # ── Plugin-to-plugin calls ────────────────────────────────────────────────
 
