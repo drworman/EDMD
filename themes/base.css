@@ -659,7 +659,7 @@ popover arrow {
 
 /* Count badge in the wide column header — pad away from the separator line */
 .mat-col-count {
-    margin-end: 8px;
+    margin-right: 8px;
 }
 
 /* ── Preferences window ──────────────────────────────────────────────────── */
