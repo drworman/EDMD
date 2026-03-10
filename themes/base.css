@@ -588,6 +588,56 @@ popover arrow {
     padding: 6px 0 2px 0;
 }
 
+/* ── Materials block tab bar ─────────────────────────────────────────────── */
+
+.mat-tab-bar {
+    background-color: var(--bg-deep);
+    border-bottom: 1px solid var(--border);
+}
+
+.mat-tab-btn {
+    background: none;
+    border: none;
+    border-radius: 0;
+    padding: 4px 6px 5px 6px;
+    color: var(--fg-dim);
+    border-bottom: 2px solid transparent;
+    box-shadow: none;
+    outline: none;
+}
+
+.mat-tab-btn:hover {
+    background-color: var(--accent-hover);
+    color: var(--fg);
+    border-bottom: 2px solid var(--border);
+}
+
+.mat-tab-btn.mat-tab-active {
+    color: var(--accent);
+    border-bottom: 2px solid var(--accent);
+    background: none;
+}
+
+.mat-tab-label {
+    font-size: 0.82em;
+    font-weight: bold;
+}
+
+.mat-tab-count {
+    font-size: 0.76em;
+    color: inherit;
+    opacity: 0.7;
+    padding: 0 2px;
+}
+
+.mat-tab-active .mat-tab-count {
+    opacity: 1.0;
+}
+
+.mat-tab-scroll {
+    padding-top: 2px;
+}
+
 /* ── Preferences window ──────────────────────────────────────────────────── */
 
 .prefs-window,

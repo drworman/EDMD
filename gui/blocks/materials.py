@@ -1,12 +1,18 @@
 """
 gui/blocks/materials.py — Engineering materials inventory block.
 
-Shows three sections: Raw / Manufactured / Encoded.
-Each section header shows the total item count.
-Items are sorted alphabetically within each section.
+Three sections (Raw / Manufactured / Encoded) presented as tabs across the top.
+Only the active tab's list is shown; each tab button carries the item count.
 
-Layout: a single ScrolledWindow wraps all three sections so the block
-has one clean scroll region rather than three competing vexpand regions.
+Implementation notes
+--------------------
+• Uses Gtk.Stack for the content pane — one child per tab, switched by name.
+• Tab bar is a hand-rolled HBox of toggle-style Gtk.Button widgets rather than
+  Gtk.Notebook.  This gives us full CSS control and clean theme adherence.
+• Active tab: .mat-tab-btn.mat-tab-active — accent underline + brighter text.
+• Inactive tab: .mat-tab-btn               — dimmed, no underline.
+• Row management (add / remove / reorder) is identical to the previous single-
+  scroll implementation; only the outer container shape has changed.
 """
 
 try:
@@ -18,6 +24,12 @@ except ImportError:
 
 from gui.block_base import BlockWidget
 
+_TABS = [
+    ("raw",          "Raw"),
+    ("manufactured", "Manufactured"),
+    ("encoded",      "Encoded"),
+]
+
 
 class MaterialsBlock(BlockWidget):
     BLOCK_TITLE = "MATERIALS"
@@ -25,60 +37,96 @@ class MaterialsBlock(BlockWidget):
 
     def build(self, parent: Gtk.Box) -> None:
         body = self._build_section(parent)
+        body.set_spacing(0)
 
-        # One scroll region for all three sections
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_vexpand(True)
-        body.append(scroll)
+        # ── Tab bar ───────────────────────────────────────────────────────────
+        tab_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        tab_bar.add_css_class("mat-tab-bar")
+        body.append(tab_bar)
 
-        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        inner.set_vexpand(True)
-        scroll.set_child(inner)
+        body.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
 
-        self._sections: dict = {}   # cat → {"count_lbl", "list_box", "empty_lbl", "rows"}
+        # ── Stack (one child per tab) ─────────────────────────────────────────
+        self._stack = Gtk.Stack()
+        self._stack.set_transition_type(Gtk.StackTransitionType.NONE)
+        self._stack.set_vexpand(True)
+        self._stack.set_hexpand(True)
+        body.append(self._stack)
 
-        for cat, label in [
-            ("raw",          "Raw"),
-            ("manufactured", "Manufactured"),
-            ("encoded",      "Encoded"),
-        ]:
-            # Section header: label left, count right
-            hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-            hdr.add_css_class("materials-section-hdr")
-            hdr.set_margin_top(4)
+        # ── Build each tab button + stack page ────────────────────────────────
+        self._tab_btns:  dict[str, Gtk.Button] = {}
+        self._sections:  dict[str, dict]       = {}
+        self._active_tab: str = "raw"
 
-            lbl = Gtk.Label(label=label.upper())
-            lbl.set_xalign(0.0)
-            lbl.set_hexpand(True)
-            lbl.add_css_class("section-header")
-            hdr.append(lbl)
+        for cat, label in _TABS:
+            # Tab button
+            btn = Gtk.Button()
+            btn.add_css_class("mat-tab-btn")
+            btn.set_hexpand(True)
+            btn.set_can_focus(False)   # keep keyboard nav clean
+            tab_bar.append(btn)
+            self._tab_btns[cat] = btn
 
-            count_lbl = Gtk.Label(label="0")
-            count_lbl.add_css_class("data-key")
-            hdr.append(count_lbl)
+            # Button inner: label + count badge
+            btn_inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+            btn_inner.set_halign(Gtk.Align.CENTER)
+            btn.set_child(btn_inner)
 
-            inner.append(hdr)
+            tab_lbl = Gtk.Label(label=label)
+            tab_lbl.add_css_class("mat-tab-label")
+            btn_inner.append(tab_lbl)
 
-            sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-            sep.add_css_class("menu-sep")
-            inner.append(sep)
+            count_badge = Gtk.Label(label="0")
+            count_badge.add_css_class("mat-tab-count")
+            btn_inner.append(count_badge)
+
+            # Stack page: scroll wrapping a vbox of item rows
+            scroll = Gtk.ScrolledWindow()
+            scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+            scroll.set_vexpand(True)
+            scroll.add_css_class("mat-tab-scroll")
 
             list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-            inner.append(list_box)
+            list_box.set_vexpand(True)
+            scroll.set_child(list_box)
 
             empty_lbl = Gtk.Label(label="— none —")
             empty_lbl.add_css_class("data-key")
             empty_lbl.set_xalign(0.5)
+            empty_lbl.set_margin_top(6)
             empty_lbl.set_margin_bottom(4)
             list_box.append(empty_lbl)
 
+            self._stack.add_named(scroll, cat)
+
             self._sections[cat] = {
-                "count_lbl": count_lbl,
-                "list_box":  list_box,
-                "empty_lbl": empty_lbl,
-                "rows":      {},      # key → (row_box, name_lbl, count_lbl)
+                "count_badge": count_badge,
+                "list_box":    list_box,
+                "empty_lbl":   empty_lbl,
+                "rows":        {},   # key → (row_box, name_lbl, count_lbl)
             }
+
+            # Click handler — capture cat by value
+            btn.connect("clicked", self._on_tab_click, cat)
+
+        # Activate first tab
+        self._set_active_tab("raw")
+
+    # ── Tab switching ─────────────────────────────────────────────────────────
+
+    def _on_tab_click(self, _btn: Gtk.Button, cat: str) -> None:
+        self._set_active_tab(cat)
+
+    def _set_active_tab(self, cat: str) -> None:
+        self._active_tab = cat
+        self._stack.set_visible_child_name(cat)
+        for key, btn in self._tab_btns.items():
+            if key == cat:
+                btn.add_css_class("mat-tab-active")
+            else:
+                btn.remove_css_class("mat-tab-active")
+
+    # ── Refresh ───────────────────────────────────────────────────────────────
 
     def refresh(self) -> None:
         s = self.state
@@ -89,14 +137,14 @@ class MaterialsBlock(BlockWidget):
         }
 
         for cat, items in buckets.items():
-            sec       = self._sections[cat]
-            count_lbl = sec["count_lbl"]
-            list_box  = sec["list_box"]
-            empty_lbl = sec["empty_lbl"]
-            rows      = sec["rows"]
+            sec          = self._sections[cat]
+            count_badge  = sec["count_badge"]
+            list_box     = sec["list_box"]
+            empty_lbl    = sec["empty_lbl"]
+            rows         = sec["rows"]
 
             total = sum(v["count"] for v in items.values())
-            count_lbl.set_label(str(total) if total else "0")
+            count_badge.set_label(str(total) if total else "0")
 
             if not items:
                 empty_lbl.set_visible(True)
@@ -107,8 +155,8 @@ class MaterialsBlock(BlockWidget):
 
             empty_lbl.set_visible(False)
 
-            sorted_items = sorted(items.items(), key=lambda kv: kv[1]["name_local"].lower())
-            current_keys = [k for k, _ in sorted_items]
+            sorted_items  = sorted(items.items(), key=lambda kv: kv[1]["name_local"].lower())
+            current_keys  = [k for k, _ in sorted_items]
 
             # Remove stale rows
             for key in list(rows.keys()):
