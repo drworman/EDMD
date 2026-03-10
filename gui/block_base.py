@@ -306,3 +306,9 @@ class BlockWidget:
 
     def refresh(self) -> None:
         pass
+
+    def on_resize(self, w: int, h: int) -> None:
+        """Called by the window after every set_size_request on this block.
+        Override in subclasses that need to respond to their own pixel width,
+        e.g. to switch between layout modes.  Default is a no-op."""
+        pass

@@ -10,7 +10,8 @@ Responsive layout:
 Implementation notes
 --------------------
 • An outer Gtk.Stack with pages "tabbed" and "wide" holds both layouts.
-  The visible page is switched on notify::width of the block frame.
+  The visible page is switched via the on_resize() hook, called by the
+  window's _replace_all_blocks() after every set_size_request.
 • Each layout has its own complete widget subtree and its own section dicts
   (list_box + rows).  refresh() updates both simultaneously so the display
   is always current regardless of which page is active.
@@ -67,13 +68,8 @@ class MaterialsBlock(BlockWidget):
         self._build_tabbed_layout()
         self._build_wide_layout()
 
-        # ── Wire width-change → layout switch ─────────────────────────────────
-        # self._frame is set by build_widget() before build() is called.
-        if self._frame is not None:
-            self._frame.connect("notify::width", self._on_width_changed)
-
-        # Start in tabbed mode; _on_width_changed will switch if block is
-        # already wide when first rendered.
+        # Start in tabbed mode; on_resize() switches layout once the window
+        # measures and places this block via _replace_all_blocks.
         self._layout_stack.set_visible_child_name("tabbed")
         self._current_layout = "tabbed"
 
@@ -206,8 +202,8 @@ class MaterialsBlock(BlockWidget):
 
     # ── Layout switching ──────────────────────────────────────────────────────
 
-    def _on_width_changed(self, widget, _param) -> None:
-        w = widget.get_width()
+    def on_resize(self, w: int, h: int) -> None:
+        """Called by the window after every set_size_request — switch layout mode."""
         if w < 10:
             return
         target = "wide" if w >= WIDE_THRESHOLD else "tabbed"

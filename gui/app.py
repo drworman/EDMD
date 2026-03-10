@@ -275,7 +275,9 @@ class EdmdWindow(Gtk.ApplicationWindow):
             self._canvas.move(widget, x, y)
             # Enforce minimum 44px width so internal widgets (e.g. ProgressBar
             # with set_size_request(40,4)) never receive a negative allocation.
-            widget.set_size_request(max(44, w), max(4, h))
+            pw, ph = max(44, w), max(4, h)
+            widget.set_size_request(pw, ph)
+            block.on_resize(pw, ph)
 
     # ── Block visibility ──────────────────────────────────────────────────────
 
