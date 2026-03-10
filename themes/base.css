@@ -662,11 +662,6 @@ popover arrow {
     margin-end: 8px;
 }
 
-/* Row list inside each wide column — right margin clears the overlay scrollbar */
-.mat-tab-scroll > * {
-    margin-end: 10px;
-}
-
 /* ── Preferences window ──────────────────────────────────────────────────── */
 
 .prefs-window,
