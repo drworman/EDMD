@@ -46,10 +46,13 @@ class BlockWidget:
         self._name:   str = ""
 
         # Drag state
-        self._drag_origin_x = 0.0
-        self._drag_origin_y = 0.0
-        self._dragging      = False
-        self._drag_ghost: "Gtk.Frame | None" = None   # lightweight ghost overlay
+        self._drag_origin_x    = 0.0
+        self._drag_origin_y    = 0.0
+        self._drag_block_w     = 0
+        self._drag_block_h     = 0
+        self._dragging         = False
+        self._drag_ghost_created = False
+        self._drag_ghost: "Gtk.Frame | None" = None
 
         # Resize state
         self._resize_origin_w = 0.0
@@ -61,6 +64,7 @@ class BlockWidget:
         # Collapse state
         self._collapsed     = False
         self._content_box: "Gtk.Box | None" = None   # hidden when collapsed
+        self._header_height = 0                        # cached after first allocation
 
     # ── Build ─────────────────────────────────────────────────────────────────
 
@@ -118,6 +122,9 @@ class BlockWidget:
         if self._header is not None:
             self._header.set_cursor(Gdk.Cursor.new_from_name("grab"))
             self._wire_collapse(self._header)
+            # Cache header height once allocated so _toggle_collapse has a
+            # reliable value even when called before the first paint.
+            self._header.connect("notify::height", self._on_header_height_changed)
 
         return self._frame
 
@@ -131,6 +138,11 @@ class BlockWidget:
         return self._footer
 
     # ── Collapse on double-click ───────────────────────────────────────────────
+
+    def _on_header_height_changed(self, widget, _param) -> None:
+        h = widget.get_height()
+        if h > 0:
+            self._header_height = h
 
     def _wire_collapse(self, widget: Gtk.Widget) -> None:
         click = Gtk.GestureClick()
@@ -152,12 +164,12 @@ class BlockWidget:
             self._footer.set_visible(show)
         if self._frame:
             cell = self._grid.cell_for(self._name)
-            x, y, w, _ = self._grid.pixel_rect(cell)
+            _, _, w, h = self._grid.pixel_rect(cell)
             if self._collapsed:
-                h = (self._header.get_height() if self._header else 24) + 4
-                self._frame.set_size_request(w, h)
+                # Use cached header height; fall back to 26px if not yet measured.
+                hdr_h = self._header_height if self._header_height > 0 else 26
+                self._frame.set_size_request(w, hdr_h + 6)
             else:
-                _, _, w, h = self._grid.pixel_rect(cell)
                 self._frame.set_size_request(w, h)
 
     # ── Drag to move (header label only) ─────────────────────────────────────
@@ -172,34 +184,43 @@ class BlockWidget:
         self._drag_gesture = drag
 
     def _on_drag_begin(self, gesture, start_x, start_y):
-        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        # Don't claim the sequence or create the ghost here — a double-click
+        # also triggers drag-begin on the first press.  We defer both until
+        # actual movement is detected in drag-update.
         self._dragging = True
+        self._drag_ghost_created = False
         cell = self._grid.cell_for(self._name)
         x, y, w, h = self._grid.pixel_rect(cell)
         self._drag_origin_x = float(x)
         self._drag_origin_y = float(y)
-        if self._header:
-            self._header.set_cursor(Gdk.Cursor.new_from_name("grabbing"))
-
-        # Create ghost: an empty frame the same size as the block, placed on
-        # the canvas.  Only this lightweight widget moves during the drag;
-        # the real block stays put until drop.  This eliminates the stutter
-        # caused by re-rendering the block's full widget tree on every
-        # mouse-move event.
-        ghost = Gtk.Frame()
-        ghost.add_css_class("block-drag-ghost")
-        ghost.set_size_request(w, h)
-        self._window._canvas.put(ghost, x, y)
-        ghost.set_visible(True)
-        self._drag_ghost = ghost
-
-        # Dim the real block to indicate it is being moved
-        if self._frame:
-            self._frame.add_css_class("block-dragging")
+        self._drag_block_w  = w
+        self._drag_block_h  = h
 
     def _on_drag_update(self, gesture, offset_x, offset_y):
-        if not self._dragging or self._drag_ghost is None:
+        if not self._dragging:
             return
+        # Only start a real drag once the pointer has moved at least 4px.
+        # This threshold prevents a double-click from accidentally dragging.
+        DRAG_THRESHOLD = 4.0
+        if abs(offset_x) < DRAG_THRESHOLD and abs(offset_y) < DRAG_THRESHOLD:
+            return
+        if not self._drag_ghost_created:
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+            self._drag_ghost_created = True
+            w = self._drag_block_w
+            h = self._drag_block_h
+            x = int(self._drag_origin_x)
+            y = int(self._drag_origin_y)
+            if self._header:
+                self._header.set_cursor(Gdk.Cursor.new_from_name("grabbing"))
+            ghost = Gtk.Frame()
+            ghost.add_css_class("block-drag-ghost")
+            ghost.set_size_request(w, h)
+            self._window._canvas.put(ghost, x, y)
+            ghost.set_visible(True)
+            self._drag_ghost = ghost
+            if self._frame:
+                self._frame.add_css_class("block-dragging")
         # Move only the ghost — the real block does not move here
         nx = max(0.0, self._drag_origin_x + offset_x)
         ny = max(0.0, self._drag_origin_y + offset_y)
@@ -207,6 +228,7 @@ class BlockWidget:
 
     def _on_drag_end(self, gesture, offset_x, offset_y):
         self._dragging = False
+        self._drag_ghost_created = False
         if self._header:
             self._header.set_cursor(Gdk.Cursor.new_from_name("grab"))
         if self._frame:
@@ -347,6 +369,6 @@ class BlockWidget:
         """Called by the window after every set_size_request on this block.
         Enforces collapsed height if the block is currently collapsed.
         Subclasses that override this should call super().on_resize(w, h) first."""
-        if self._collapsed and self._frame and self._header:
-            collapsed_h = self._header.get_height() + 4
-            self._frame.set_size_request(w, max(collapsed_h, 26))
+        if self._collapsed and self._frame:
+            hdr_h = self._header_height if self._header_height > 0 else 26
+            self._frame.set_size_request(w, hdr_h + 6)
