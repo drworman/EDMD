@@ -326,93 +326,138 @@ class AssetsPlugin(BasePlugin):
             pass
 
     def _scan_and_refresh(self) -> None:
-        """Scan recent journals for StoredShips/StoredModules; update state and GUI.
+        """Scan recent journals to rebuild fleet state on startup.
 
-        StoredShips events only list ships NOT currently active, so a single
-        event will be missing whichever ship the player was flying at the time.
-        We therefore union across all StoredShips events in the scan window,
-        keyed by ShipID, and strip the current ship out after the scan.
+        Strategy:
+          1. Collect every unique hull from Loadout events (newest first).
+             The most recent Loadout = current ship.  All other unique ShipIDs
+             are ships the player owns — this is reliable because a Loadout event
+             fires every time you board a ship.
+          2. Merge StoredShips data on top for location and hot-goods status.
+             StoredShips supplements Loadout; it is NOT the primary fleet source.
+             (StoredShips always omits whichever ship was active at the time it
+             was written, making it unreliable as a sole source.)
+          3. Scan for StoredModules, CarrierStats while we're here.
         """
         try:
             journal_dir = Path(self.core.journal_dir)
-            journals = sorted(journal_dir.glob("Journal*.log"), reverse=True)
+            journals    = sorted(journal_dir.glob("Journal*.log"), reverse=True)
 
-            # ships_by_id: accumulated union of all stored-ship records seen
-            ships_by_id: dict[int, dict] = {}
-            found_modules = False
-            found_carrier = False
-            found_loadout = False
+            # --- Pass 1: build fleet from Loadout events ----------------------
+            # Key: ShipID.  Value: ship dict built from the most recent Loadout
+            # for that hull (first seen when iterating newest-first).
+            loadout_by_id: dict[int, dict] = {}
+            current_ship: dict | None      = None
 
             for jpath in journals[:SCAN_JOURNALS]:
-                if found_modules and found_carrier and found_loadout:
-                    break
                 try:
                     lines = jpath.read_text(encoding="utf-8").splitlines()
                 except OSError:
                     continue
                 for line in reversed(lines):
-                    if found_modules and found_carrier and found_loadout:
-                        break
                     try:
                         ev = json.loads(line)
                     except ValueError:
                         continue
-                    name = ev.get("event")
-                    if name == "Shipyard":
-                        # Extend the ShipType→localised cache from any
-                        # shipyard the player has visited.
+                    if ev.get("event") == "Shipyard":
                         for entry in ev.get("PriceList", []):
                             st  = entry.get("ShipType", "").lower()
                             loc = entry.get("ShipType_Localised", "")
                             if st and loc:
                                 self._shiptype_cache[st] = loc
-                    elif name == "StoredShips":
-                        # Accumulate — don't stop on first hit.
-                        # A ship absent from one event was likely the active
-                        # ship at that moment; earlier events will list it.
-                        for ship_dict in self._parse_stored_ships(ev):
-                            sid = ship_dict.get("ship_id")
-                            if sid is not None and sid not in ships_by_id:
-                                ships_by_id[sid] = ship_dict
-                    elif not found_modules and name == "StoredModules":
-                        mods = self._parse_stored_modules(ev)
-                        self.core.state.assets_stored_modules = mods
-                        found_modules = True
-                    elif not found_carrier and name == "CarrierStats":
-                        self.core.state.assets_carrier = self._parse_carrier_stats(ev)
-                        found_carrier = True
-                    elif not found_loadout and name == "Loadout":
+                    elif ev.get("event") == "Loadout":
+                        sid = ev.get("ShipID")
+                        if sid is None or sid in loadout_by_id:
+                            continue
                         ship_type   = ev.get("Ship", "")
                         ship_type_l = (ev.get("Ship_Localised")
                                        or self._localised_ship_name(ship_type))
                         if ship_type_l and ship_type:
                             self._shiptype_cache[ship_type.lower()] = ship_type_l
-                        self.core.state.assets_current_ship = {
-                            "_key":         "current",
-                            "current":      True,
-                            "ship_id":      ev.get("ShipID"),
+                        rec = {
+                            "_key":         f"ship_{sid}",
+                            "ship_id":      sid,
+                            "current":      False,
                             "type":         ship_type,
                             "type_display": ship_type_l,
                             "name":         ev.get("ShipName", ""),
                             "ident":        ev.get("ShipIdent", ""),
-                            "system":       self.core.state.pilot_system or "—",
+                            "system":       "—",
                             "value":        ev.get("HullValue", 0),
-                            "hull":         100,
+                            "hot":          False,
                         }
-                        found_loadout = True
+                        loadout_by_id[sid] = rec
+                        if current_ship is None:
+                            # Most recent Loadout = what the player is flying now
+                            current_ship = rec
 
-            # Strip the current ship from stored list (it appears as current,
-            # not stored).  Do this after the full scan so we have both pieces.
-            current_id = (self.core.state.assets_current_ship or {}).get("ship_id")
-            if current_id is not None:
-                ships_by_id.pop(current_id, None)
-            self.core.state.assets_stored_ships = list(ships_by_id.values())
+            # Mark and separate current ship
+            if current_ship is not None:
+                current_ship["current"] = True
+                current_ship["_key"]    = "current"
+                self.core.state.assets_current_ship = current_ship
+
+            # --- Pass 2: merge StoredShips for location + hot status ----------
+            # Also picks up any hull not seen in Loadout events within the window.
+            found_modules = False
+            found_carrier = False
+
+            for jpath in journals[:SCAN_JOURNALS]:
+                try:
+                    lines = jpath.read_text(encoding="utf-8").splitlines()
+                except OSError:
+                    continue
+                for line in reversed(lines):
+                    try:
+                        ev = json.loads(line)
+                    except ValueError:
+                        continue
+                    name = ev.get("event")
+                    if name == "StoredShips":
+                        for section in ("ShipsHere", "ShipsRemote"):
+                            for s in ev.get(section, []):
+                                sid = s.get("ShipID")
+                                if sid is None:
+                                    continue
+                                if sid in loadout_by_id:
+                                    # Fill location if we don't have one yet
+                                    if loadout_by_id[sid]["system"] == "—":
+                                        loadout_by_id[sid]["system"] = s.get("StarSystem", "—")
+                                    loadout_by_id[sid]["hot"] = s.get("Hot", False)
+                                else:
+                                    # Hull not in Loadout window — add from StoredShips
+                                    ship_type = s.get("ShipType", "")
+                                    disp = (s.get("ShipType_Localised")
+                                            or self._localised_ship_name(ship_type))
+                                    loadout_by_id[sid] = {
+                                        "_key":         f"ship_{sid}",
+                                        "ship_id":      sid,
+                                        "current":      False,
+                                        "type":         ship_type,
+                                        "type_display": disp,
+                                        "name":         s.get("Name", ""),
+                                        "ident":        "",
+                                        "system":       s.get("StarSystem", "—"),
+                                        "value":        s.get("Value", 0),
+                                        "hot":          s.get("Hot", False),
+                                    }
+                    elif not found_modules and name == "StoredModules":
+                        self.core.state.assets_stored_modules = self._parse_stored_modules(ev)
+                        found_modules = True
+                    elif not found_carrier and name == "CarrierStats":
+                        self.core.state.assets_carrier = self._parse_carrier_stats(ev)
+                        found_carrier = True
+
+            # Commit the complete fleet to state.
+            # Do NOT strip the current ship here — state holds all hulls.
+            # The block's refresh() filters out the current ship at render
+            # time, so it is displayed exactly once (via assets_current_ship).
+            self.core.state.assets_stored_ships = list(loadout_by_id.values())
 
             self._save_to_storage()
         except Exception:
             pass
 
-        # Trigger GUI refresh on main thread
         gq = self.core.gui_queue if self.core else None
         if gq:
             gq.put(("plugin_refresh", "assets"))
@@ -550,7 +595,23 @@ class AssetsPlugin(BasePlugin):
                 if gq: gq.put(("plugin_refresh", "assets"))
 
             case "StoredShips":
-                state.assets_stored_ships = self._parse_stored_ships(event)
+                # Merge — don't overwrite.  This event omits the active ship.
+                incoming = {
+                    d["ship_id"]: d
+                    for d in self._parse_stored_ships(event)
+                    if d.get("ship_id") is not None
+                }
+                existing = {
+                    d["ship_id"]: d
+                    for d in getattr(state, "assets_stored_ships", [])
+                    if d.get("ship_id") is not None
+                }
+                merged = {**existing, **incoming}
+                # Do NOT strip current ship here — state holds the full fleet.
+                # The block's refresh() deduplicates against assets_current_ship
+                # at render time.  Stripping here causes permanent data loss
+                # when preload replays events out of order.
+                state.assets_stored_ships = list(merged.values())
                 self._save_to_storage()
                 if gq: gq.put(("plugin_refresh", "assets"))
 
