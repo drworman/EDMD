@@ -122,8 +122,12 @@ class AlertsPlugin(BasePlugin):
                     if fuel_hour > 0:
                         from core.emit import fmt_duration
                         fuel_time_remain = f" (~{fmt_duration(event['FuelMain'] / fuel_hour * 3600)})"
+                        state.fuel_burn_rate = fuel_hour
                 ses.fuel_check_time  = logtime
                 ses.fuel_check_level = event["FuelMain"]
+
+                # Persist current fuel level on state so other blocks can read it
+                state.fuel_current = event["FuelMain"]
 
                 col = ""; level = ":"; fuel_loglevel = 0
                 if event["FuelMain"] < state.fuel_tank_size * FUEL_CRIT_THRESHOLD:
