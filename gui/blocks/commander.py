@@ -127,17 +127,25 @@ class CommanderBlock(BlockWidget):
             box.append(r)
             return r, v
 
-        # Shields | Hull
+        # Shields
         row_sh = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         row_sh.add_css_class("data-row")
-        key_sh = self.make_label("Shields | Hull", css_class="data-key")
-        key_sh.set_hexpand(False)
-        row_sh.append(key_sh)
-        self._cmdr_health = self.make_label("— | —", css_class="data-value")
-        self._cmdr_health.set_hexpand(True)
-        self._cmdr_health.set_xalign(1.0)
-        row_sh.append(self._cmdr_health)
+        row_sh.append(self.make_label("Shields", css_class="data-key"))
+        self._cmdr_shields = self.make_label("—", css_class="data-value")
+        self._cmdr_shields.set_hexpand(True)
+        self._cmdr_shields.set_xalign(1.0)
+        row_sh.append(self._cmdr_shields)
         box.append(row_sh)
+
+        # Hull
+        row_hull = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        row_hull.add_css_class("data-row")
+        row_hull.append(self.make_label("Hull", css_class="data-key"))
+        self._cmdr_hull = self.make_label("—", css_class="data-value")
+        self._cmdr_hull.set_hexpand(True)
+        self._cmdr_hull.set_xalign(1.0)
+        row_hull.append(self._cmdr_hull)
+        box.append(row_hull)
 
         _, self._cmdr_fuel = _row("Fuel")
 
@@ -405,20 +413,27 @@ class CommanderBlock(BlockWidget):
             self._pp_rank_bar.set_fraction(0.0)
             self._pp_rank_bar.set_visible(False)
 
-        # ── Info tab: Shields | Hull ──────────────────────────────────────────
+        # ── Info tab: Shields ─────────────────────────────────────────────────
         shield_str = fmt_shield(s.ship_shields, s.ship_shields_recharging)
-        hull_str   = f"{s.ship_hull}%" if s.ship_hull is not None else "—"
-        self._cmdr_health.set_label(f"{shield_str}  |  {hull_str}")
-
+        self._cmdr_shields.set_label(shield_str)
         for cls in ("health-good", "health-warn", "health-crit"):
-            self._cmdr_health.remove_css_class(cls)
-        if not s.ship_shields:
-            self._cmdr_health.add_css_class("health-crit")
-        elif s.ship_shields_recharging:
-            self._cmdr_health.add_css_class("health-warn")
+            self._cmdr_shields.remove_css_class(cls)
+        if s.ship_shields is None:
+            pass  # leave unstyled
+        elif not s.ship_shields:
+            self._cmdr_shields.add_css_class(
+                "health-warn" if s.ship_shields_recharging else "health-crit"
+            )
         else:
-            hc = hull_css(s.ship_hull) if s.ship_hull is not None else "health-good"
-            self._cmdr_health.add_css_class(hc)
+            self._cmdr_shields.add_css_class("health-good")
+
+        # ── Info tab: Hull ────────────────────────────────────────────────────
+        hull_pct = s.ship_hull
+        self._cmdr_hull.set_label(f"{hull_pct}%" if hull_pct is not None else "—")
+        for cls in ("health-good", "health-warn", "health-crit"):
+            self._cmdr_hull.remove_css_class(cls)
+        if hull_pct is not None:
+            self._cmdr_hull.add_css_class(hull_css(hull_pct))
 
         # ── Ranks tab ─────────────────────────────────────────────────────────
         capi_ranks    = getattr(s, "capi_ranks",    None)

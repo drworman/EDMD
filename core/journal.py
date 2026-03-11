@@ -72,7 +72,16 @@ def _poll_status_json(
     state: MonitorState,
     gui_queue: queue.Queue | None,
 ) -> None:
-    """Background thread: tail Status.json for shield/pilot-in-SLF flags."""
+    """Background thread: poll Status.json for live shield/hull/SLF flags.
+
+    Status.json is rewritten by the game every ~500ms.  We read it on the
+    same cadence.  Fields consumed:
+
+      Flags  (int) — bit 0x08: ShieldsUp, bit 0x2000000: InFighter
+
+    Status.json does NOT expose hull integrity (Health).  Hull is tracked
+    exclusively from HullDamage journal events and repair journal events.
+    """
     status_path = journal_dir / "Status.json"
     last_flags  = None
 
@@ -260,6 +269,64 @@ def bootstrap_crew(state: MonitorState, journal_dir: Path, trace_mode: bool = Fa
         state.crew_paid_complete = (first_assign_journal == journals[0])
     else:
         state.crew_paid_complete = False
+
+
+def bootstrap_hull(state: MonitorState, journal_dir: Path, trace_mode: bool = False) -> None:
+    """Recover hull integrity from journal history.
+
+    The game does not write current hull to the current session's journal at
+    login — only HullDamage events do.  If damage occurred in a previous
+    session, we scan backwards through recent journals to find the last
+    meaningful hull event (HullDamage, RepairAll, Resurrect, Repair).
+    Only called when the current-session preload produced no HullDamage.
+    """
+    # ship_hull is initialised to 100 in MonitorState.__init__.
+    # If any HullDamage fired during preload it will have set a real value;
+    # in that case hull < 100 and we can skip the expensive journal scan.
+    if state.ship_hull < 100:
+        trace("hull bootstrap: current session has hull data, skipping", trace_mode)
+        return
+
+    journals = sorted(journal_dir.glob("Journal*.log"), reverse=True)
+    RESET_EVENTS  = {"RepairAll", "Resurrect"}
+    DAMAGE_EVENTS = {"HullDamage"}
+
+    for jpath in journals:
+        try:
+            lines = jpath.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+
+        for line in reversed(lines):
+            try:
+                je = json.loads(line)
+            except ValueError:
+                continue
+            ev = je.get("event")
+
+            if ev in RESET_EVENTS:
+                # A repair/rebuy before any damage in scan order means hull was
+                # full at the end of that session — stop scanning this file.
+                trace(f"hull bootstrap: {ev} found in {jpath.name}, hull=100", trace_mode)
+                return  # state.ship_hull stays 100 — correct
+
+            if ev == "Repair":
+                item = je.get("Item", "").lower()
+                if "hull" in item or item == "":
+                    trace(f"hull bootstrap: Repair found in {jpath.name}, hull=100", trace_mode)
+                    return  # hull was repaired — stays 100
+
+            if ev in DAMAGE_EVENTS:
+                if je.get("PlayerPilot") and not je.get("Fighter"):
+                    hull_pct = round(je["Health"] * 100)
+                    state.ship_hull = hull_pct
+                    trace(
+                        f"hull bootstrap: HullDamage {hull_pct}% from {jpath.name}",
+                        trace_mode,
+                    )
+                    return
+
+    trace("hull bootstrap: no hull history found, leaving at 100", trace_mode)
 
 
 def bootstrap_missions(
@@ -991,6 +1058,7 @@ def monitor_journal(
         load_session_state(jfile, active_session)
         bootstrap_slf(state, journal_dir, trace_mode)
         bootstrap_crew(state, journal_dir, trace_mode)
+        bootstrap_hull(state, journal_dir, trace_mode)
 
         # Restore session start time if persisted
         from core.state import _session_start_iso

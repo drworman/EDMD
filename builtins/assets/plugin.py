@@ -510,16 +510,53 @@ class AssetsPlugin(BasePlugin):
         """Extract display-relevant fields from a CarrierStats journal event."""
         fin   = event.get("Finance", {})
         space = event.get("SpaceUsage", {})
+
+        # Services: journal gives a list of {"Name": ..., "Active": bool}
+        raw_svcs = event.get("Services", [])
+        services = {}
+        if isinstance(raw_svcs, list):
+            for svc in raw_svcs:
+                k = svc.get("Name", "")
+                if k:
+                    services[k] = "ok" if svc.get("Active", False) else "unavailable"
+
+        total_cap = space.get("TotalCapacity", 0)
+        free_sp   = space.get("FreeSpace", 0)
+
         return {
-            "callsign":  event.get("Callsign", "—"),
-            "name":      event.get("Name", "—"),
-            "system":    event.get("CurrentStarSystem", "—"),
-            "fuel":      event.get("FuelLevel", 0),       # 0–1000 tritium
-            "balance":   fin.get("CarrierBalance",    0),
-            "available": fin.get("AvailableBalance",  0),
-            "capacity":  space.get("TotalCapacity",   0),
-            "free":      space.get("FreeSpace",       0),
-            "docking":   event.get("DockingAccess",   "—"),
+            # Identity
+            "callsign":      event.get("Callsign", "—"),
+            "name":          event.get("Name", "—"),
+            "system":        event.get("CurrentStarSystem", "—"),
+            # Fuel
+            "fuel":          event.get("FuelLevel", 0),   # 0–1000 tritium
+            # Operational state (not in journal — CAPI fills this)
+            "carrier_state": "—",
+            # Access
+            "docking":       event.get("DockingAccess",   "—"),
+            "notorious":     event.get("AllowNotorious",  False),
+            # Finance
+            "balance":       fin.get("CarrierBalance",    0),
+            "reserve":       fin.get("ReserveBalance",    0),
+            "available":     fin.get("AvailableBalance",  0),
+            "reserve_pct":   fin.get("ReservePercent",    0),
+            "tax_refuel":    fin.get("TaxRate_Refuel",    0),
+            "tax_repair":    fin.get("TaxRate_Repair",    0),
+            "tax_rearm":     fin.get("TaxRate_Rearm",     0),
+            "tax_pioneer":   fin.get("TaxRate_Pioneer",   0),
+            # Cargo
+            "cargo_total":   total_cap,
+            "cargo_used":    total_cap - free_sp,
+            "cargo_free":    free_sp,
+            # Pack storage
+            "ship_packs":    space.get("ShipPacks",       0),
+            "module_packs":  space.get("ModulePacks",     0),
+            # Micro-resources
+            "micro_total":   space.get("MicroresourceCapacityTotal", 0),
+            "micro_free":    space.get("MicroresourceCapacityFree",  0),
+            "micro_used":    space.get("MicroresourceCapacityUsed",  0),
+            # Services
+            "services":      services,
         }
 
     def _save_to_storage(self) -> None:
@@ -636,8 +673,10 @@ class AssetsPlugin(BasePlugin):
             case "CarrierFinance":
                 if state.assets_carrier is not None:
                     fin = event.get("Finance", {})
-                    state.assets_carrier["balance"]   = fin.get("CarrierBalance",   state.assets_carrier.get("balance"))
-                    state.assets_carrier["available"] = fin.get("AvailableBalance", state.assets_carrier.get("available"))
+                    if fin.get("CarrierBalance")  is not None: state.assets_carrier["balance"]     = fin["CarrierBalance"]
+                    if fin.get("ReserveBalance")  is not None: state.assets_carrier["reserve"]     = fin["ReserveBalance"]
+                    if fin.get("AvailableBalance") is not None: state.assets_carrier["available"]  = fin["AvailableBalance"]
+                    if fin.get("ReservePercent")  is not None: state.assets_carrier["reserve_pct"] = fin["ReservePercent"]
                 if gq: gq.put(("plugin_refresh", "assets"))
 
 

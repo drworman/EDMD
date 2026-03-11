@@ -30,7 +30,7 @@ class CommanderPlugin(BasePlugin):
     DEFAULT_COL    = 0
     DEFAULT_ROW    = 0
     DEFAULT_WIDTH  = 8
-    DEFAULT_HEIGHT = 5
+    DEFAULT_HEIGHT = 6
 
     def on_load(self, core) -> None:
         super().on_load(core)

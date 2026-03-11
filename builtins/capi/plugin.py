@@ -704,66 +704,129 @@ class CAPIPlugin(BasePlugin):
         if not data:
             return
 
-        # Trace the raw top-level keys and finance/capacity substructures
-        # so we can diagnose field-name mismatches against the actual API response.
+        # ── Diagnostic dump ────────────────────────────────────────────────────
+        # Always write the raw response so the operator can inspect real keys.
+        # File: ~/.local/share/edmd/fleetcarrier_dump.json  (or XDG equivalent)
+        try:
+            import json as _json
+            _dump = EDMD_DATA_DIR / "fleetcarrier_dump.json"
+            _dump.write_text(_json.dumps(data, indent=2, default=str))
+            self._trace(f"fleetcarrier raw dump written to {_dump}")
+        except Exception as _e:
+            self._trace(f"fleetcarrier dump failed: {_e}")
+
         self._trace(f"fleetcarrier top-level keys: {list(data.keys())}")
-        self._trace(f"fleetcarrier finance: {data.get('finance', data.get('balance', '—'))}")
-        self._trace(f"fleetcarrier capacity: {data.get('capacity', data.get('space', '—'))}")
 
-        services = data.get("services", {})
-        docking  = services.get("dock", {}).get("access", "—")
-        fuel_lod  = data.get("fuel", 0)
-
-        # Finance: CAPI has used both "finance" and "balance" as the container
-        # key at various points. Try both; also accept flat keys at top level.
-        finance = data.get("finance") or data.get("balance") or {}
-        if not isinstance(finance, dict):
-            finance = {}
-        carrier_bal  = (finance.get("carrierBalance")
-                        or finance.get("balance")
-                        or data.get("carrierBalance")
-                        or 0)
-        avail_bal    = (finance.get("availableBalance")
-                        or finance.get("available")
-                        or data.get("availableBalance")
-                        or 0)
-
-        # Capacity: freeSpace / total are the common keys; also try "space"
-        cap_obj   = data.get("capacity") or data.get("space") or {}
-        if not isinstance(cap_obj, dict):
-            cap_obj = {}
-        free_space = (cap_obj.get("freeSpace")
-                      or cap_obj.get("free")
-                      or data.get("freeSpace")
-                      or 0)
-        # Total capacity = sum of all pack-type slots
-        total_cap  = (cap_obj.get("shipPacks", 0)
-                      + cap_obj.get("modulePacks", 0)
-                      + cap_obj.get("cargoCapacity", 0))
-        if total_cap == 0:
-            # Fallback: some versions just give a single "capacity" int
-            total_cap = cap_obj.get("capacity") or data.get("totalCapacity") or 0
-
-        # Ensure all numeric fields are ints (CAPI occasionally returns strings)
+        # ── Helpers ────────────────────────────────────────────────────────────
         def _int(v):
             try: return int(v)
             except (TypeError, ValueError): return 0
 
+        def _pct(v):
+            try: return round(float(v), 1)
+            except (TypeError, ValueError): return 0.0
+
+        def _decode_vanity(s: str) -> str:
+            """CAPI hex-encodes vanityName as ASCII bytes e.g. 56454354555241 → VECTURA."""
+            try:
+                return bytes.fromhex(s).decode("ascii").strip()
+            except Exception:
+                return s
+
+        # ── Name / callsign ────────────────────────────────────────────────────
+        name_obj = data.get("name") or {}
+        callsign = name_obj.get("callsign") or data.get("callsign") or "\u2014"
+        raw_vanity = name_obj.get("vanityName") or name_obj.get("filteredVanityName") or ""
+        carrier_name = _decode_vanity(raw_vanity) if raw_vanity else callsign
+        self._trace(f"name callsign={callsign!r}  raw_vanity={raw_vanity!r}  decoded={carrier_name!r}")
+
+        # ── Finance ────────────────────────────────────────────────────────────
+        # Keys: bankBalance, bankReservedBalance, service_taxation{...},
+        #       maintenance, maintenanceToDate, coreCost, servicesCost
+        fin = data.get("finance") or {}
+        self._trace(f"finance keys: {list(fin.keys())}")
+        bank_bal   = _int(fin.get("bankBalance",         0))
+        bank_res   = _int(fin.get("bankReservedBalance", 0))
+        bank_avail = bank_bal - bank_res
+        taxation   = fin.get("service_taxation") or {}
+        self._trace(f"service_taxation: {taxation}")
+        maintenance     = _int(fin.get("maintenance",        0))
+        maintenance_wtd = _int(fin.get("maintenanceToDate",  0))
+        core_cost       = _int(fin.get("coreCost",           0))
+        svc_cost        = _int(fin.get("servicesCost",       0))
+
+        # ── Capacity ───────────────────────────────────────────────────────────
+        # crew   = space consumed by crew/services (fixed overhead)
+        # freeSpace = space available for new cargo
+        # cargoForSale + cargoNotForSale + cargoSpaceReserved = cargo currently stored
+        cap = data.get("capacity") or {}
+        self._trace(f"capacity keys: {list(cap.keys())}")
+        crew_space  = _int(cap.get("crew",                0))
+        free_space  = _int(cap.get("freeSpace",           0))
+        cargo_sale  = _int(cap.get("cargoForSale",        0))
+        cargo_nosale= _int(cap.get("cargoNotForSale",     0))
+        cargo_res   = _int(cap.get("cargoSpaceReserved",  0))
+        cargo_used  = cargo_sale + cargo_nosale + cargo_res
+        cargo_total = crew_space + free_space          # = 25 000 for a standard carrier
+        # "available cargo space" = free_space (does not include crew overhead)
+        ship_packs   = _int(cap.get("shipPacks",    0))
+        module_packs = _int(cap.get("modulePacks",  0))
+        micro_total  = _int(cap.get("microresourceCapacityTotal",    0))
+        micro_free   = _int(cap.get("microresourceCapacityFree",     0))
+        micro_used   = _int(cap.get("microresourceCapacityUsed",     0))
+
+        # ── Docking / access ───────────────────────────────────────────────────
+        docking   = data.get("dockingAccess")  or "\u2014"
+        notorious = bool(data.get("notoriousAccess", False))
+
+        # ── Services ───────────────────────────────────────────────────────────
+        # Authoritative status lives at market.services
+        services = {}
+        mkt = data.get("market") or {}
+        raw_svcs = mkt.get("services") or {}
+        if isinstance(raw_svcs, dict):
+            services = dict(raw_svcs)   # {"shipyard": "ok", "blackmarket": "unavailable", ...}
+        self._trace(f"services ({len(services)} entries): {services}")
+
         carrier = {
-            "callsign": data.get("name", {}).get("callsign", "—")
-                        if isinstance(data.get("name"), dict)
-                        else data.get("callsign", "—"),
-            "name":     data.get("name", {}).get("vanityName", "—")
-                        if isinstance(data.get("name"), dict)
-                        else data.get("name", "—"),
-            "system":   data.get("currentStarSystem", "—"),
-            "fuel":     _int(fuel_lod),
-            "balance":  _int(carrier_bal),
-            "available": _int(avail_bal),
-            "capacity": _int(total_cap),
-            "free":     _int(free_space),
-            "docking":  docking,
-            "capi":     True,
+            # Identity
+            "callsign":         callsign,
+            "name":             carrier_name,
+            "system":           data.get("currentStarSystem", "\u2014"),
+            "theme":            data.get("theme", "\u2014"),
+            # Fuel
+            "fuel":             _int(data.get("fuel", 0)),
+            # Operational state
+            "carrier_state":    data.get("state", "\u2014"),
+            # Access
+            "docking":          docking,
+            "notorious":        notorious,
+            # Finance
+            "balance":          bank_bal,
+            "reserve":          bank_res,
+            "available":        bank_avail,
+            "tax_refuel":       _pct(taxation.get("refuel",          0)),
+            "tax_repair":       _pct(taxation.get("repair",          0)),
+            "tax_rearm":        _pct(taxation.get("rearm",           0)),
+            "tax_pioneer":      _pct(taxation.get("pioneersupplies", 0)),
+            "maintenance":      maintenance,
+            "maintenance_wtd":  maintenance_wtd,
+            # Cargo
+            "cargo_total":      cargo_total,
+            "cargo_crew":       crew_space,
+            "cargo_used":       cargo_used,
+            "cargo_free":       free_space,
+            # Pack storage
+            "ship_packs":       ship_packs,
+            "module_packs":     module_packs,
+            # Micro-resources
+            "micro_total":      micro_total,
+            "micro_free":       micro_free,
+            "micro_used":       micro_used,
+            # Services
+            "services":         services,
+            # Source flag
+            "capi":             True,
         }
         self._trace(f"carrier dict built: {carrier}")
         state.assets_carrier = carrier

@@ -25,7 +25,7 @@ class MissionsPlugin(BasePlugin):
     ]
 
     DEFAULT_COL    = 0
-    DEFAULT_ROW    = 5
+    DEFAULT_ROW    = 6
     DEFAULT_WIDTH  = 8
     DEFAULT_HEIGHT = 4
 

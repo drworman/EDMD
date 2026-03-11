@@ -170,46 +170,109 @@ class AssetsBlock(BlockWidget):
         box.append(sm_row)
         return box
 
+    # ── Carrier tab helpers ────────────────────────────────────────────────────
+
+    def _carrier_section(self, body: "Gtk.Box", title: str) -> None:
+        """Append a thin section header label to body."""
+        lbl = Gtk.Label(label=title)
+        lbl.add_css_class("data-key")
+        lbl.set_xalign(0.0)
+        lbl.set_margin_top(6)
+        lbl.set_margin_bottom(2)
+        body.append(lbl)
+        sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        body.append(sep)
+
+    def _carrier_row(self, body: "Gtk.Box", key: str, label: str) -> None:
+        """Append a key/value row and register the value label under key."""
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        row.add_css_class("data-row")
+        k_lbl = self.make_label(label, css_class="data-key")
+        v_lbl = self.make_label("—", css_class="data-value")
+        v_lbl.set_hexpand(True)
+        v_lbl.set_xalign(1.0)
+        row.append(k_lbl)
+        row.append(v_lbl)
+        body.append(row)
+        self._carrier_rows[key] = v_lbl
+
     def _build_carrier_tab(self) -> Gtk.Widget:
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        box.set_margin_top(6)
-        box.set_margin_start(6)
-        box.set_margin_end(6)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
 
         self._carrier_none_lbl = Gtk.Label(label="No fleet carrier on record")
         self._carrier_none_lbl.add_css_class("data-key")
         self._carrier_none_lbl.set_xalign(0.5)
         self._carrier_none_lbl.set_margin_top(8)
-        box.append(self._carrier_none_lbl)
+        outer.append(self._carrier_none_lbl)
 
-        # Detail grid — hidden until carrier data is present
-        self._carrier_detail_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
-        self._carrier_detail_box.set_visible(False)
-        box.append(self._carrier_detail_box)
+        # Scrollable detail area — hidden until carrier data is present
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_vexpand(True)
+        scroll.add_css_class("mat-tab-scroll")
+        self._carrier_detail_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self._carrier_detail_box.set_vexpand(True)
+        self._carrier_detail_box.set_margin_start(6)
+        self._carrier_detail_box.set_margin_end(12)
+        self._carrier_detail_box.set_margin_top(4)
+        self._carrier_detail_box.set_margin_bottom(4)
+        scroll.set_child(self._carrier_detail_box)
+        scroll.set_visible(False)
+        outer.append(scroll)
+        self._carrier_scroll = scroll
 
         self._carrier_rows: dict[str, Gtk.Label] = {}
-        for key, label in [
-            ("name",      "Name"),
-            ("callsign",  "Callsign"),
-            ("system",    "System"),
-            ("fuel",      "Fuel"),
-            ("balance",   "Balance"),
-            ("available", "Available"),
-            ("free",      "Free Space"),
-            ("docking",   "Docking"),
-        ]:
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-            row.add_css_class("data-row")
-            k_lbl = self.make_label(label, css_class="data-key")
-            v_lbl = self.make_label("—", css_class="data-value")
-            v_lbl.set_hexpand(True)
-            v_lbl.set_xalign(1.0)
-            row.append(k_lbl)
-            row.append(v_lbl)
-            self._carrier_detail_box.append(row)
-            self._carrier_rows[key] = v_lbl
+        body = self._carrier_detail_box
 
-        return box
+        # ── Identity ─────────────────────────────────────────────────────────
+        self._carrier_row(body, "name",          "Name")
+        self._carrier_row(body, "callsign",       "Callsign")
+        self._carrier_row(body, "system",         "System")
+        self._carrier_row(body, "fuel",           "Fuel")
+        self._carrier_row(body, "carrier_state",  "State")
+        self._carrier_row(body, "theme",          "Theme")
+
+        # ── Access ────────────────────────────────────────────────────────────
+        self._carrier_section(body, "ACCESS")
+        self._carrier_row(body, "docking",        "Docking")
+        self._carrier_row(body, "notorious",      "Notorious")
+
+        # ── Finance ───────────────────────────────────────────────────────────
+        self._carrier_section(body, "FINANCE")
+        self._carrier_row(body, "balance",        "Balance")
+        self._carrier_row(body, "reserve",        "Reserve")
+        self._carrier_row(body, "available",      "Available")
+        self._carrier_row(body, "tax_refuel",     "Tax: Refuel")
+        self._carrier_row(body, "tax_repair",     "Tax: Repair")
+        self._carrier_row(body, "tax_rearm",      "Tax: Rearm")
+        self._carrier_row(body, "tax_pioneer",    "Tax: Supplies")
+        self._carrier_row(body, "maintenance",     "Upkeep/wk")
+        self._carrier_row(body, "maintenance_wtd", "Upkeep so far")
+
+        # ── Cargo ─────────────────────────────────────────────────────────────
+        self._carrier_section(body, "CARGO")
+        self._carrier_row(body, "cargo_cap_row",   "Total space")
+        self._carrier_row(body, "cargo_crew_row",  "Crew/services")
+        self._carrier_row(body, "cargo_used_row",  "Cargo stored")
+        self._carrier_row(body, "cargo_free_row",  "Cargo free")
+
+        # ── Storage ───────────────────────────────────────────────────────────
+        self._carrier_section(body, "STORAGE")
+        self._carrier_row(body, "ship_packs",     "Ship Packs")
+        self._carrier_row(body, "module_packs",   "Module Packs")
+        self._carrier_row(body, "micro_row",      "Micro-resources")
+
+        # ── Services ──────────────────────────────────────────────────────────
+        self._carrier_section(body, "SERVICES")
+        self._carrier_services_lbl = Gtk.Label(label="—")
+        self._carrier_services_lbl.add_css_class("data-key")
+        self._carrier_services_lbl.set_xalign(0.0)
+        self._carrier_services_lbl.set_wrap(True)
+        self._carrier_services_lbl.set_margin_top(2)
+        self._carrier_services_lbl.set_margin_bottom(4)
+        body.append(self._carrier_services_lbl)
+
+        return outer
 
     def _make_section_scroll(self):
         scroll = Gtk.ScrolledWindow()
@@ -290,29 +353,155 @@ class AssetsBlock(BlockWidget):
 
     # ── Carrier tab ─────────────────────────────────────────────────────────────────
 
+    # Service name → display label
+    _SVC_LABELS = {
+        "blackmarket":         "Black Market",
+        "commodities":         "Commodities",
+        "workshop":            "Workshop",
+        "refuel":              "Refuel",
+        "repair":              "Repair",
+        "rearm":               "Rearm",
+        "shipyard":            "Shipyard",
+        "exploration":         "Cartographics",
+        "voucherredemption":   "Redemption",
+        "pioneersupplies":     "Pioneer Supplies",
+        "bartender":           "Bartender",
+        "vistagenomics":       "Vista Genomics",
+        "socialspace":         "Social Space",
+    }
+    # Statuses that count as the service being active
+    _SVC_ACTIVE = {"ok", "faction"}
+    # Internal/infrastructure services to suppress from the display list
+    _SVC_HIDDEN = {
+        "carriermanagement", "stationmenu", "dock", "crewlounge",
+        "contacts", "carrierfuel", "engineer", "livery",
+        "registeringcolonisation",
+    }
+
     def _refresh_carrier(self, carrier: dict | None) -> None:
         has = carrier is not None
         self._carrier_none_lbl.set_visible(not has)
-        self._carrier_detail_box.set_visible(has)
+        self._carrier_scroll.set_visible(has)
         if not has:
             return
 
-        fuel_pct = int(int(carrier.get("fuel", 0) or 0) / 10)  # 0–1000 → 0–100%
-        self._carrier_rows["name"].set_label(carrier.get("name", "—"))
-        self._carrier_rows["callsign"].set_label(carrier.get("callsign", "—"))
-        self._carrier_rows["system"].set_label(carrier.get("system", "—"))
-        self._carrier_rows["fuel"].set_label(f"{carrier.get('fuel', 0)}/1000  ({fuel_pct}%)")
-        self._carrier_rows["balance"].set_label(_fmt_credits(carrier.get("balance")))
-        self._carrier_rows["available"].set_label(_fmt_credits(carrier.get("available")))
-        capacity = carrier.get("capacity", 0)
-        free     = carrier.get("free", 0)
-        if capacity:
-            used = capacity - free
-            self._carrier_rows["free"].set_label(f"{free:,} / {capacity:,}  ({used*100//capacity}% used)")
+        def _s(key, default="\u2014"):
+            v = carrier.get(key, default)
+            return str(v) if v is not None else default
+
+        def _cr(key):
+            return _fmt_credits(carrier.get(key))
+
+        def _pct_val(key):
+            v = carrier.get(key, 0)
+            try:
+                f = float(v)
+                return f"{f:.1f}%" if f != int(f) else f"{int(f)}%"
+            except (TypeError, ValueError):
+                return "\u2014"
+
+        # ── Identity ─────────────────────────────────────────────────────────
+        self._carrier_rows["name"].set_label(_s("name"))
+        self._carrier_rows["callsign"].set_label(_s("callsign"))
+        self._carrier_rows["system"].set_label(_s("system"))
+        fuel = int(carrier.get("fuel", 0) or 0)
+        self._carrier_rows["fuel"].set_label(f"{fuel}/1000  ({fuel // 10}%)")
+        raw_state = (carrier.get("carrier_state") or "\u2014").replace("_", " ")
+        self._carrier_rows["carrier_state"].set_label(raw_state.title())
+        theme = (carrier.get("theme") or "\u2014").replace("_", " ").title()
+        self._carrier_rows["theme"].set_label(theme)
+
+        # ── Access ────────────────────────────────────────────────────────────
+        docking = carrier.get("docking", "\u2014") or "\u2014"
+        self._carrier_rows["docking"].set_label(
+            docking.replace("squadronfriends", "Squadron + Friends")
+                   .replace("_", " ").title()
+        )
+        notorious = carrier.get("notorious", False)
+        self._carrier_rows["notorious"].set_label(
+            "Allowed" if notorious else "Not Allowed"
+        )
+
+        # ── Finance ───────────────────────────────────────────────────────────
+        self._carrier_rows["balance"].set_label(_cr("balance"))
+        bal     = int(carrier.get("balance",  0) or 0)
+        reserve = int(carrier.get("reserve",  0) or 0)
+        res_pct = (reserve * 100 // bal) if bal else 0
+        self._carrier_rows["reserve"].set_label(
+            f"{_fmt_credits(reserve)}  ({res_pct}%)" if reserve else "\u2014"
+        )
+        self._carrier_rows["available"].set_label(_cr("available"))
+        self._carrier_rows["tax_refuel"].set_label(_pct_val("tax_refuel"))
+        self._carrier_rows["tax_repair"].set_label(_pct_val("tax_repair"))
+        self._carrier_rows["tax_rearm"].set_label(_pct_val("tax_rearm"))
+        self._carrier_rows["tax_pioneer"].set_label(_pct_val("tax_pioneer"))
+        maint = int(carrier.get("maintenance",     0) or 0)
+        mwtd  = int(carrier.get("maintenance_wtd", 0) or 0)
+        self._carrier_rows["maintenance"].set_label(
+            _fmt_credits(maint) if maint else "\u2014"
+        )
+        self._carrier_rows["maintenance_wtd"].set_label(
+            _fmt_credits(mwtd) if mwtd else "\u2014"
+        )
+
+        # ── Cargo ─────────────────────────────────────────────────────────────
+        ctotal = int(carrier.get("cargo_total", 0) or 0)
+        ccrew  = int(carrier.get("cargo_crew",  0) or 0)
+        cused  = int(carrier.get("cargo_used",  0) or 0)
+        cfree  = int(carrier.get("cargo_free",  0) or 0)
+        self._carrier_rows["cargo_cap_row"].set_label(
+            f"{ctotal:,} t" if ctotal else "\u2014"
+        )
+        self._carrier_rows["cargo_crew_row"].set_label(
+            f"{ccrew:,} t" if ccrew else "\u2014"
+        )
+        if cused or cfree:
+            self._carrier_rows["cargo_used_row"].set_label(f"{cused:,} t")
+            self._carrier_rows["cargo_free_row"].set_label(f"{cfree:,} t")
         else:
-            self._carrier_rows["free"].set_label("—")
-        docking = carrier.get("docking", "—")
-        self._carrier_rows["docking"].set_label(docking.replace("_", " ").title())
+            self._carrier_rows["cargo_used_row"].set_label("0 t")
+            self._carrier_rows["cargo_free_row"].set_label(f"{cfree:,} t")
+
+        # ── Storage ───────────────────────────────────────────────────────────
+        sp = int(carrier.get("ship_packs",   0) or 0)
+        mp = int(carrier.get("module_packs", 0) or 0)
+        self._carrier_rows["ship_packs"].set_label(str(sp) if sp else "\u2014")
+        self._carrier_rows["module_packs"].set_label(str(mp) if mp else "\u2014")
+        mt = int(carrier.get("micro_total", 0) or 0)
+        mu = int(carrier.get("micro_used",  0) or 0)
+        mf = int(carrier.get("micro_free",  0) or 0)
+        self._carrier_rows["micro_row"].set_label(
+            f"{mu}/{mt}  ({mf} free)" if mt else "\u2014"
+        )
+
+        # ── Services ──────────────────────────────────────────────────────────
+        svcs = carrier.get("services") or {}
+        active = sorted(
+            self._SVC_LABELS.get(k, k.replace("_", " ").title())
+            for k, v in svcs.items()
+            if v in self._SVC_ACTIVE and k not in self._SVC_HIDDEN
+        )
+        unavailable = sorted(
+            self._SVC_LABELS.get(k, k.replace("_", " ").title())
+            for k, v in svcs.items()
+            if v == "unavailable" and k not in self._SVC_HIDDEN
+        )
+        unmanned = sorted(
+            self._SVC_LABELS.get(k, k.replace("_", " ").title())
+            for k, v in svcs.items()
+            if v == "unmanned" and k not in self._SVC_HIDDEN
+        )
+        parts = []
+        if active:
+            parts.append("\u2705 " + ",  ".join(active))
+        if unmanned:
+            parts.append("\U0001f6ab Unmanned: " + ",  ".join(unmanned))
+        if unavailable:
+            parts.append("\u274c N/A: " + ",  ".join(unavailable))
+        self._carrier_services_lbl.set_label(
+            "\n".join(parts) if parts else "\u2014"
+        )
+
 
     # ── Ships tab ─────────────────────────────────────────────────────────────
 

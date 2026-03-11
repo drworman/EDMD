@@ -27,13 +27,20 @@ class AlertsPlugin(BasePlugin):
         "ReservoirReplenished",
         "EjectCargo",
         "Died",
-        # Auto-clear stale alerts on new game load or docking anywhere
+        # Auto-clear stale alerts whenever context resets
         "LoadGame",
         "Docked",
+        "FSDJump",
+        "SupercruiseEntry",
+        # Hull/shield reset after rebuy
+        "Resurrect",
+        # Hull restored after repair
+        "RepairAll",
+        "Repair",
     ]
 
     DEFAULT_COL    = 0
-    DEFAULT_ROW    = 9
+    DEFAULT_ROW    = 10
     DEFAULT_WIDTH  = 24
     DEFAULT_HEIGHT = 3
 
@@ -50,6 +57,10 @@ class AlertsPlugin(BasePlugin):
         core.register_alert(self)
 
     def _push(self, emoji: str, text: str) -> None:
+        # Never populate the queue during journal replay — those events are
+        # historical and the player's current situation is already different.
+        if self.core.state.in_preload:
+            return
         self.alert_queue.appendleft({
             "emoji":     emoji,
             "text":      text,
@@ -176,13 +187,49 @@ class AlertsPlugin(BasePlugin):
                     timestamp=logtime, loglevel=notify["Died"],
                 )
 
-            case "LoadGame" | "Docked":
-                # Stale alerts from a previous session or location are no
-                # longer actionable — clear silently on new load or docking.
-                if not state.in_preload and self.alert_queue:
+            case "LoadGame" | "Docked" | "FSDJump" | "SupercruiseEntry":
+                # Any context change makes existing alerts irrelevant.
+                # No in_preload guard: _push already blocks replay events, so
+                # the queue is either empty during preload (nothing to clear)
+                # or has live events that genuinely need clearing.
+                if self.alert_queue:
                     self.alert_queue.clear()
                     if core.gui_queue:
                         core.gui_queue.put(("alerts_update", None))
+                # Reset shields to up on LoadGame — new ship instance always spawns
+                # with shields online. Do NOT reset hull here; Status.json poll
+                # reads the real hull value within 500ms and will override it.
+                if ev == "LoadGame":
+                    state.ship_shields            = True
+                    state.ship_shields_recharging = False
+                    if core.gui_queue:
+                        core.gui_queue.put(("vessel_update", None))
+
+            case "Resurrect":
+                # Player rebuyed after destruction — ship is restored to full
+                state.ship_hull               = 100
+                state.ship_shields            = True
+                state.ship_shields_recharging = False
+                if self.alert_queue:
+                    self.alert_queue.clear()
+                if core.gui_queue:
+                    core.gui_queue.put(("vessel_update", None))
+                    core.gui_queue.put(("alerts_update", None))
+
+            case "RepairAll":
+                # Full station repair — hull is definitively back to 100%
+                state.ship_hull = 100
+                if core.gui_queue:
+                    core.gui_queue.put(("vessel_update", None))
+
+            case "Repair":
+                # Individual repair — hull reinforcement or structural repair
+                # implies player is at a repair facility; reset to 100%.
+                item = event.get("Item", "").lower()
+                if "hull" in item or "repair" in item or item == "":
+                    state.ship_hull = 100
+                    if core.gui_queue:
+                        core.gui_queue.put(("vessel_update", None))
 
     def get_alerts(self) -> list[dict]:
         """Return current alerts list for the GUI block renderer."""
